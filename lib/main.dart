@@ -10,10 +10,12 @@ import 'screens/forgot_password_screen.dart';
 
 // Import các trang cho BottomNavigationBar
 import 'screens/home_screen.dart';
-import 'screens/location_screen.dart';
 import 'screens/messages_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/profile_screen.dart';
+// import 'screens/check_email_screen.dart';
+import 'screens/my_trips_app.dart';
+import 'screens/ChatHomePage.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,8 +70,8 @@ class _MainAppScaffoldState extends State<MainAppScaffold> {
   // Danh sách các trang tương ứng với các mục trong BottomNavBar
   static const List<Widget> _widgetOptions = <Widget>[
     HomeScreen(title: 'Trang Chủ'), // Trang 0
-    LocationScreen(),               // Trang 1
-    MessagesScreen(),               // Trang 2
+    MyTripsApp(),               // Trang 1
+    ChatListScreen(),               // Trang 2
     NotificationsScreen(),          // Trang 3
     ProfileScreen(),                // Trang 4
   ];
@@ -112,7 +114,7 @@ class _MainAppScaffoldState extends State<MainAppScaffold> {
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.explore), label: 'Explore'),
-          BottomNavigationBarItem(icon: Icon(Icons.location_on_outlined), label: 'Location'),
+          BottomNavigationBarItem(icon: Icon(Icons.location_on_outlined), label: 'My trips'),
           BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Messages'),
           BottomNavigationBarItem(icon: Icon(Icons.notifications_none), label: 'Notifications'),
           BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),

@@ -33,7 +33,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isLoading = false;
 
-  final String _apiUrl = 'https://backend-mobile-44v9.onrender.com/api/v1/auth/register';
+  final String _apiUrl = 'https://backend-mobile-api-a4n4.onrender.com/api/v1/auth/register';
 
   Future<void> _handleRegister() async {
   if (!_formKey.currentState!.validate()) return;

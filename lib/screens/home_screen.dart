@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.title});
@@ -10,42 +11,73 @@ class HomeScreen extends StatefulWidget {
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
-  
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-
-  //  WEATHER
+  // WEATHER
   double? temperature;
-  final String _apiKey = '5cd5d5d2d7a8b76cf116dd99d4cf4668'; // <-- đổi key ở đây
+  final String _apiKey = '5cd5d5d2d7a8b76cf116dd99d4cf4668';
   final String _city = 'Da Nang';
 
-  // tym
+  // Favorites
   Set<String> _favorites = {};
+
+  // API Data
+  List<dynamic> _tours = [];
+  List<dynamic> _fellows = [];
+  List<dynamic> _places = [];
+  List<dynamic> _blogs = [];
+  List<dynamic> _experiences = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _fetchWeather();
     _loadFavorites();
+    _loadApiData();
   }
-  // Load local
+
+  Future<void> _loadApiData() async {
+    setState(() => _isLoading = true);
+    try {
+      final results = await Future.wait([
+        ApiService.getTours(),
+        ApiService.getFellows(),
+        ApiService.getPlaces(),
+        ApiService.getBlogs(),
+        ApiService.getExperiences(), // 👈 Thêm gọi API mới
+      ]);
+      setState(() {
+        _tours = results[0];
+        _fellows = results[1];
+        _places = results[2];
+        _blogs = results[3];
+        _experiences = results[4]; // 👈 Gán dữ liệu
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading API data: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _loadFavorites() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _favorites = prefs.getStringList('favorites')?.toSet() ?? {};
     });
   }
-  // Toggle tim
+
   Future<void> _toggleFavorite(String id) async {
     final prefs = await SharedPreferences.getInstance();
-
-    if (_favorites.contains(id)) {
-      _favorites.remove(id);
-    } else {
-      _favorites.add(id);
-    }
-
+    setState(() {
+      if (_favorites.contains(id)) {
+        _favorites.remove(id);
+      } else {
+        _favorites.add(id);
+      }
+    });
     await prefs.setStringList('favorites', _favorites.toList());
   }
 
@@ -53,70 +85,18 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final url = 'https://api.openweathermap.org/data/2.5/weather?q=Da%20Nang&units=metric&appid=$_apiKey';
       final res = await http.get(Uri.parse(url));
-      
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         setState(() {
           temperature = data['main']['temp'];
         });
-      } else {
-        // In ra lỗi để debug (ví dụ: 401 là do key chưa kích hoạt)
-        print('Lỗi API: ${res.statusCode} - ${res.body}');
       }
     } catch (e) {
-      print('Lỗi kết nối: $e');
+      print('Lỗi kết nối thời tiết: $e');
     }
   }
 
-  // --- DỮ LIỆU MẪU MỚI - ĐẢM BẢO HIỂN THỊ ---
-
-  // Dữ liệu cho modal "Xem thêm Hướng dẫn viên"
-  final List<Map<String, String>> _moreGuides = [
-    {'name': 'Tuan Tran', 'location': 'Danang, Vietnam', 'imageUrl': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=300'},
-    {'name': 'Emmy', 'location': 'Hanoi, Vietnam', 'imageUrl': 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300'},
-    {'name': 'Linh Hana', 'location': 'Danang, Vietnam', 'imageUrl': 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=300'},
-    {'name': 'Khai Ho', 'location': 'Ho Chi Minh, Vietnam', 'imageUrl': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300'},
-    {'name': 'David Chen', 'location': 'Nha Trang, Vietnam', 'imageUrl': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300'},
-    {'name': 'Sophia Nguyen', 'location': 'Sapa, Vietnam', 'imageUrl': 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=300'},
-  ];
-  // Dữ liệu mới cho modal "Xem thêm Tour nổi bật"
-  final List<Map<String, String>> _moreTours = [
-    {
-      'title': 'Hue Ancient Capital Tour',
-      'price': '\$280.00',
-      'imageUrl': 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=400'
-    },
-    {
-      'title': 'Bangkok - Pattaya 5 Days',
-      'price': '\$520.00',
-      'imageUrl': 'https://images.unsplash.com/photo-1508009603885-50cf7c579365?auto=format&fit=crop&w=400'
-    },
-    {
-      'title': 'Nha Trang Beach Relax Tour',
-      'price': '\$290.00',
-      'imageUrl': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400'
-    },
-    {
-      'title': 'Tokyo – Mount Fuji Experience',
-      'price': '\$720.00',
-      'imageUrl': 'https://images.unsplash.com/photo-1549692520-acc6669e2f0c?auto=format&fit=crop&w=400'
-    },
-
-  ];
-
-
-  // Dữ liệu cho modal "Xem thêm Tin tức du lịch"
-  final List<Map<String, String>> _moreNews = [
-    {'title': 'Sunrise at Fansipan Peak', 'imageUrl': 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=400'},
-    {'title': 'Hoi An Lantern Festival Night', 'imageUrl': 'https://images.unsplash.com/photo-1541417904950-b855846fe074?auto=format&fit=crop&w=400'},
-
-    {'title': 'Explore Phu Quoc Paradise Island', 'imageUrl': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400'},
-    {'title': 'Sa Pa Rice Terraces Season', 'imageUrl': 'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?auto=format&fit=crop&w=400'},
-  ];
-
-
-  // --- HÀM HIỂN THỊ MODAL ---
-  void _showMoreModal(BuildContext context, String title, List<Map<String, String>> items, Widget Function(Map<String, String> ) itemBuilder) {
+  void _showMoreModal(BuildContext context, String title, List<dynamic> items, Widget Function(dynamic) itemBuilder) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -156,47 +136,61 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- BUILD METHOD CHÍNH ---
   @override
   Widget build(BuildContext context) {
-    // Widget này không còn chứa Scaffold nữa.
-    // Nó chỉ trả về nội dung sẽ được hiển thị bên trong MainAppScaffold.
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: <Widget>[
-          _buildCombinedHeader(),
-          const SizedBox(height: 25),
-          _buildSectionTitle('Top Journeys'),
-          _buildTopJourneys(),
-          _buildSectionTitle('Best Guides', showSeeMore: true, onSeeMore: () => _showMoreModal(context, 'All Guides', _moreGuides, (item) => _buildGuideListItem(item))),
-          _buildBestGuides(),
-          _buildSectionTitle('Top Experiences'),
-          _buildTopExperiences(),
-          _buildSectionTitle('Featured Tours', showSeeMore: true, onSeeMore: () => _showMoreModal(context, 'All Featured Tours', _moreTours, (item) => _buildTourCard(item['id'] ?? 'tour-${item['title']?.toLowerCase().replaceAll(' ', '-')}', item['title']!, item['price']!, item['imageUrl']!))),
-          _buildFeaturedTours(),
-          _buildSectionTitle('Travel News', showSeeMore: true, onSeeMore: () => _showMoreModal(context, 'All Travel News', _moreNews, (item) => _buildNewsCard(item['title']!, item['imageUrl']!))),
-          _buildTravelNews(),
+      child: RefreshIndicator(
+        onRefresh: _loadApiData,
+        child: _isLoading 
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: <Widget>[
+                _buildCombinedHeader(),
+                const SizedBox(height: 25),
+                _buildSectionTitle('Top Journeys'),
+                _buildTopJourneys(),
+                _buildSectionTitle('Best Guides', showSeeMore: true, onSeeMore: () => _showMoreModal(context, 'All Guides', _fellows, (item) => _buildGuideListItem(item))),
+                _buildBestGuides(),
+                _buildSectionTitle('Top Experiences'),
+                _buildTopExperiences(),
+                _buildSectionTitle('Featured Tours', showSeeMore: true, onSeeMore: () => _showMoreModal(context, 'All Featured Tours', _tours, (item) => _buildTourCard(item))),
+                _buildFeaturedTours(),
+                _buildSectionTitle('Travel News', showSeeMore: true, onSeeMore: () => _showMoreModal(context, 'All Travel News', _blogs, (item) => _buildNewsCard(item))),
+                _buildTravelNews(),
+              ],
+            ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title, {bool showSeeMore = false, VoidCallback? onSeeMore}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2D3142))),
+          if (showSeeMore)
+            GestureDetector(
+              onTap: onSeeMore,
+              child: const Text('SEE MORE', style: TextStyle(color: Color(0xFF00CEA6), fontWeight: FontWeight.bold, fontSize: 14)),
+            ),
         ],
       ),
     );
   }
 
-  // --- CÁC WIDGET CON ---
-
   Widget _buildCombinedHeader() {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // Phần ảnh nền và thông tin Explore
         Container(
-          height: 180, // Tăng chiều cao một chút để cân đối
+          height: 180,
           width: double.infinity,
           decoration: const BoxDecoration(
             image: DecorationImage(
-              image: NetworkImage(
-                'https://res.cloudinary.com/dqe5syxc0/image/upload/v1769696289/Mask_Group_mejmh6.png',
-              ),
+              image: NetworkImage('https://res.cloudinary.com/dqe5syxc0/image/upload/v1769696289/Mask_Group_mejmh6.png'),
               fit: BoxFit.cover,
             ),
           ),
@@ -204,10 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  Colors.black.withOpacity(0.5),
-                  Colors.transparent,
-                ],
+                colors: [Colors.black.withOpacity(0.5), Colors.transparent],
                 begin: Alignment.bottomCenter,
                 end: Alignment.topCenter,
               ),
@@ -220,14 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Explore',
-                      style: TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
+                    const Text('Explore', style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
@@ -235,28 +219,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: const [
                             Icon(Icons.location_on, color: Colors.white, size: 14),
                             SizedBox(width: 2),
-                            Text(
-                              'Da Nang',
-                              style: TextStyle(color: Colors.white, fontSize: 14),
-                            ),
+                            Text('Da Nang', style: TextStyle(color: Colors.white, fontSize: 14)),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.cloud_outlined,
-                                color: Colors.white, size: 30),
+                            const Icon(Icons.cloud_outlined, color: Colors.white, size: 30),
                             const SizedBox(width: 6),
-                            Text(
-                              temperature != null
-                                  ? '${temperature!.round()}°C'
-                                  : '--°C',
-                              style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.w400,
-                                color: Colors.white,
-                              ),
-                            ),
+                            Text(temperature != null ? '${temperature!.round()}°C' : '--°C',
+                              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w400, color: Colors.white)),
                           ],
                         ),
                       ],
@@ -267,31 +239,23 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        
-        // Thanh Search Bar nằm đè lên
         Positioned(
           bottom: -25,
-          left: 20,
-          right: 20,
+          left: 16,
+          right: 16,
           child: Container(
+            height: 50,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
-                ),
-              ],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))],
             ),
-            child: TextField(
+            child: const TextField(
               decoration: InputDecoration(
                 hintText: 'Hi, where do you want to explore?',
-                hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
-                prefixIcon: Icon(Icons.search, color: Colors.grey[400]),
+                prefixIcon: Icon(Icons.search, color: Colors.grey),
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 15),
+                contentPadding: EdgeInsets.symmetric(vertical: 15),
               ),
             ),
           ),
@@ -300,214 +264,122 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSectionTitle(String title, {bool showSeeMore = false, VoidCallback? onSeeMore}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16.0, 24.0, 16.0, 8.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          if (showSeeMore)
-            InkWell(
-              onTap: onSeeMore,
-              child: Text('SEE MORE', style: TextStyle(color: const Color(0xFF00CEA6), fontWeight: FontWeight.bold)),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildTopJourneys() {
+    if (_tours.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No journeys found')));
     return SizedBox(
-      height: 260,
-      child: ListView(
+      height: 240,
+      child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(left: 16),
-        children: [
-          _buildJourneyCard('Da Nang - Ba Na - Hoi An', '\$400.00', 'https://images.unsplash.com/photo-1528702748617-c64d49f918af?auto=format&fit=crop&w=400' ),
-          _buildJourneyCard('Thailand Temples', '\$600.00', 'https://images.unsplash.com/photo-1528181304800-259b08848526?auto=format&fit=crop&w=400' ),
-          _buildJourneyCard('Singapore Gardens', '\$550.00', 'https://images.unsplash.com/photo-1525874684015-58379d421a52?auto=format&fit=crop&w=400' ),
-        ],
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _tours.length,
+        itemBuilder: (context, index) {
+          final tour = _tours[index];
+          return _buildJourneyCard(tour);
+        },
       ),
     );
   }
 
-  Widget _buildJourneyCard(String title, String price, String imageUrl) {
+  Widget _buildJourneyCard(dynamic tour) {
     return Container(
-      width: 180,
+      width: 200,
       margin: const EdgeInsets.only(right: 16),
       child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         clipBehavior: Clip.antiAlias,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
-          Stack(children: [
-            Image.network(imageUrl, height: 120, width: double.infinity, fit: BoxFit.cover),
-
-            Positioned(
-              left: 8, bottom: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(8)),
-                child: Row(children: const [
-                  Icon(Icons.star, size: 14, color: Colors.amber),
-                  Icon(Icons.star, size: 14, color: Colors.amber),
-                  Icon(Icons.star, size: 14, color: Colors.amber),
-                  Icon(Icons.star, size: 14, color: Colors.amber),
-                  Icon(Icons.star, size: 14, color: Colors.amber),
-                  SizedBox(width: 6),
-                  Text('1247 likes', style: TextStyle(color: Colors.white, fontSize: 11))
-                ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                Image.network(tour['thumbnail'] ?? 'https://via.placeholder.com/200x120', height: 120, width: double.infinity, fit: BoxFit.cover),
+                const Positioned(top: 8, right: 8, child: Icon(Icons.bookmark_border, color: Colors.white)),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tour['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Row(children: [const Icon(Icons.calendar_today, size: 12, color: Colors.grey), const SizedBox(width: 4), Text(tour['duration'] ?? '', style: const TextStyle(fontSize: 11, color: Colors.grey))]),
+                  const SizedBox(height: 4),
+                  Text('\$${tour['priceAdult'] ?? 0}', style: const TextStyle(color: Color(0xFF00CEA6), fontWeight: FontWeight.bold)),
+                ],
               ),
             ),
-
-            Positioned(
-              top: 8, right: 8,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
-                child: const Icon(Icons.bookmark_border, size: 18),
-              ),
-            ),
-          ]),
-
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
-            child: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(children: const [
-              Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-              SizedBox(width: 6),
-              Text('Jan 30, 2020', style: TextStyle(fontSize: 12, color: Colors.grey)),
-            ]),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            child: Row(children: const [
-              Icon(Icons.access_time, size: 14, color: Colors.grey),
-              SizedBox(width: 6),
-              Text('3 days', style: TextStyle(fontSize: 12, color: Colors.grey)),
-            ]),
-          ),
-
-          const Spacer(),
-
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-            child: Text(price, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF00CEA6))),
-          ),
-
-        ]),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildBestGuides() {
-    return Padding(
+    if (_fellows.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No guides found')));
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        childAspectRatio: 0.8,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        children: [
-          _buildGuideCard('Tuan Tran', 'Danang, Vietnam', 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=300' ),
-          _buildGuideCard('Emmy', 'Hanoi, Vietnam', 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300' ),
-          _buildGuideCard('Linh Hana', 'Danang, Vietnam', 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=300' ),
-          _buildGuideCard('Khai Ho', 'Ho Chi Minh, Vietnam', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300' ),
-        ],
-      ),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: 0.8),
+      itemCount: _fellows.length > 4 ? 4 : _fellows.length,
+      itemBuilder: (context, index) {
+        return _buildGuideCard(_fellows[index]);
+      },
     );
   }
 
-  Widget _buildGuideCard(String name, String location, String imageUrl) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
+  Widget _buildGuideCard(dynamic fellow) {
+    final user = fellow['user'];
+    final name = user != null ? '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}' : 'Unknown';
+    final avatar = user != null ? user['avatar'] : 'https://via.placeholder.com/150';
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Expanded(
-          flex: 3,
-          child: Stack(children: [
-            Image.network(imageUrl, width: double.infinity, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.error))),
-
-            // ⭐ Rating + reviews (TRÊN ẢNH)
-            Positioned(
-              left: 8, bottom: 8,
-              child: Row(children: const [
-                Icon(Icons.star, size: 14, color: Colors.amber),
-                Icon(Icons.star, size: 14, color: Colors.amber),
-                Icon(Icons.star, size: 14, color: Colors.amber),
-                Icon(Icons.star, size: 14, color: Colors.amber),
-                Icon(Icons.star, size: 14, color: Colors.amber),
-                SizedBox(width: 6),
-                Text('127 reviews',
-                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
-              ]),
-            ),
-          ]),
-        ),
-
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-
-              Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-
-              Row(children: [
-                const Icon(Icons.location_on, size: 14, color: Color(0xFF00CEA6)),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(location,
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF00CEA6)),
-                    overflow: TextOverflow.ellipsis),
-                ),
-              ]),
-
-            ]),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(15),
+            child: Image.network(avatar, width: double.infinity, fit: BoxFit.cover),
           ),
         ),
-
-      ]),
+        const SizedBox(height: 8),
+        Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Row(
+          children: [
+            const Icon(Icons.location_on, size: 12, color: Color(0xFF00CEA6)),
+            const SizedBox(width: 4),
+            Text(fellow['city'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+      ],
     );
   }
 
   Widget _buildTopExperiences() {
+    if (_experiences.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No experiences found')));
     return SizedBox(
-      height: 200,
-      child: ListView(
+      height: 200, // Tăng nhẹ chiều cao để chứa thêm ngày tháng
+      child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(left: 16),
-        children: [
-          _buildExperienceCard(
-            'Sunset Kayaking on Han River',
-            'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=500',
-          ),
-          _buildExperienceCard(
-            'Fansipan Cable Car Experience',
-            'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?auto=format&fit=crop&w=500',
-          ),
-          _buildExperienceCard(
-            'Da Lat Coffee Farm Discovery',
-            'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=500',
-          ),
-        ],
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _experiences.length,
+        itemBuilder: (context, index) {
+          final exp = _experiences[index];
+          // Lấy 10 ký tự đầu của createdAt (YYYY-MM-DD)
+          final dateStr = exp['createdAt']?.toString().substring(0, 10) ?? '';
+          
+          return _buildExperienceCard(
+            exp['title'] ?? '', 
+            exp['thumbnail'] ?? 'https://via.placeholder.com/250x180',
+            dateStr
+          );
+        },
       ),
     );
   }
 
-  Widget _buildExperienceCard(String title, String imageUrl) {
+  Widget _buildExperienceCard(String title, String imageUrl, String date) {
     return Container(
       width: 250,
       margin: const EdgeInsets.only(right: 16),
@@ -517,11 +389,42 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Stack(
           alignment: Alignment.bottomLeft,
           children: [
-            Image.network(imageUrl, width: double.infinity, height: double.infinity, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.error))),
-            Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Colors.black54, Colors.transparent], begin: Alignment.bottomCenter, end: Alignment.center))),
+            Image.network(imageUrl, width: double.infinity, height: double.infinity, fit: BoxFit.cover),
+            // Lớp phủ Gradient để chữ rõ hơn
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.black87, Colors.transparent], 
+                  begin: Alignment.bottomCenter, 
+                  end: Alignment.topCenter
+                )
+              )
+            ),
             Padding(
               padding: const EdgeInsets.all(12.0),
-              child: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title, 
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today, color: Colors.white70, size: 12),
+                      const SizedBox(width: 4),
+                      Text(
+                        date, 
+                        style: const TextStyle(color: Colors.white70, fontSize: 12)
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -530,154 +433,89 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFeaturedTours() {
+    if (_tours.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No tours found')));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
-        children: [
-          _buildTourCard(
-            'danang-tour',
-            'Da Nang - Ba Na - Hoi An',
-            '\$400.00',
-            'https://images.unsplash.com/photo-1528702748617-c64d49f918af?auto=format&fit=crop&w=400',
-          ),
+        children: _tours.take(3).map((tour) => _buildTourCard(tour)).toList(),
+      ),
+    );
+  }
 
-          _buildTourCard(
-            'melbourne-tour',
-            'Melbourne - Sydney',
-            '\$600.00',
-            'https://images.unsplash.com/photo-1514395462725-fb4566210144?auto=format&fit=crop&w=400',
+  Widget _buildTourCard(dynamic tour) {
+    final id = tour['_id'] ?? '';
+    final isFav = _favorites.contains(id);
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      elevation: 4,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              Image.network(tour['thumbnail'] ?? 'https://via.placeholder.com/400x170', height: 170, width: double.infinity, fit: BoxFit.cover),
+              Positioned(
+                left: 12,
+                bottom: 12,
+                child: Row(
+                  children: [
+                    const Icon(Icons.star, color: Colors.amber, size: 16),
+                    const SizedBox(width: 6),
+                    Text('${tour['rating'] ?? 4.5} likes', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                  ],
+                ),
+              ),
+              const Positioned(top: 12, right: 12, child: Icon(Icons.bookmark_border, color: Colors.white, size: 26)),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text(tour['title'] ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                    InkWell(
+                      onTap: () => _toggleFavorite(id),
+                      child: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? const Color(0xFF00CEA6) : Colors.grey),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(children: [const Icon(Icons.calendar_today, size: 14, color: Colors.grey), const SizedBox(width: 6), Text(tour['createdAt']?.toString().substring(0, 10) ?? '', style: const TextStyle(fontSize: 13, color: Colors.grey))]),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text(tour['duration'] ?? '', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                    const Spacer(),
+                    Text('\$${tour['priceAdult'] ?? 0}', style: const TextStyle(color: Color(0xFF00CEA6), fontWeight: FontWeight.bold, fontSize: 16)),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTourCard(String id, String title, String price, String imageUrl) {
-    return StatefulBuilder(
-      builder: (context, setState) {
-        final bool isFav = _favorites.contains(id);
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          clipBehavior: Clip.antiAlias,
-          elevation: 4,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              //IMAGE + OVERLAY
-              Stack(
-                children: [
-                  Image.network(imageUrl, height: 170, width: double.infinity, fit: BoxFit.cover),
-
-                  // ⭐ rating + likes
-                  Positioned(
-                    left: 12,
-                    bottom: 12,
-                    child: Row(
-                      children: const [
-                        Icon(Icons.star, color: Colors.amber, size: 16),
-                        Icon(Icons.star, color: Colors.amber, size: 16),
-                        Icon(Icons.star, color: Colors.amber, size: 16),
-                        Icon(Icons.star, color: Colors.amber, size: 16),
-                        Icon(Icons.star_half, color: Colors.amber, size: 16),
-                        SizedBox(width: 6),
-                        Text('1247 likes', style: TextStyle(color: Colors.white, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-
-                  // 🔖 bookmark
-                  const Positioned(top: 12, right: 12,
-                    child: Icon(Icons.bookmark_border, color: Colors.white, size: 26),
-                  ),
-                ],
-              ),
-
-              //CONTENT
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // title + heart
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        InkWell(
-                          onTap: () {
-                            _toggleFavorite(id);
-                            setState(() {});
-                          },
-                          child: Icon(
-                            isFav ? Icons.favorite : Icons.favorite_border,
-                            color: isFav
-                                ? const Color(0xFF00CEA6)
-                                : Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // date
-                    Row(
-                      children: const [
-                        Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                        SizedBox(width: 6),
-                        Text('Jan 30, 2020', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                      ],
-                    ),
-
-                    const SizedBox(height: 6),
-
-                    // duration + price
-                    Row(
-                      children: [
-                        const Icon(Icons.access_time, size: 14, color: Colors.grey),
-                        const SizedBox(width: 6),
-                        const Text('3 days', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                        const Spacer(),
-                        Text(price, style: const TextStyle(color: Color(0xFF00CEA6), fontWeight: FontWeight.bold, fontSize: 16)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-
-
   Widget _buildTravelNews() {
+    if (_blogs.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No news found')));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
-        children: [
-        _buildNewsCard(
-          'Discover Ninh Binh Nature',
-          'https://images.unsplash.com/photo-1528181304800-259b08848526?auto=format&fit=crop&w=400',
-        ),
-        _buildNewsCard(
-          'Beautiful Sunrise in Sapa',
-          'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=400',
-        ),
-      ],
+        children: _blogs.take(3).map((blog) => _buildNewsCard(blog)).toList(),
       ),
     );
   }
 
-  Widget _buildNewsCard(String title, String imageUrl) {
+  Widget _buildNewsCard(dynamic blog) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
@@ -685,28 +523,34 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Image.network(imageUrl, height: 150, width: double.infinity, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.error))),
+          Image.network(blog['thumbnail'] ?? 'https://via.placeholder.com/400x150', height: 150, width: double.infinity, fit: BoxFit.cover),
           Padding(
             padding: const EdgeInsets.all(12.0),
-            child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(blog['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 4),
+                Text(blog['createdAt']?.toString().substring(0, 10) ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  // Widget dùng để hiển thị trong modal "All Guides"
-  Widget _buildGuideListItem(Map<String, String> item) {
+  Widget _buildGuideListItem(dynamic fellow) {
+    final user = fellow['user'];
+    final name = user != null ? '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}' : 'Unknown';
+    final avatar = user != null ? user['avatar'] : 'https://via.placeholder.com/150';
+
     return Card(
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundImage: NetworkImage(item['imageUrl']!),
-          onBackgroundImageError: (exception, stackTrace) {},
-        ),
-        title: Text(item['name']!),
-        subtitle: Text(item['location']!),
+        leading: CircleAvatar(backgroundImage: NetworkImage(avatar)),
+        title: Text(name),
+        subtitle: Text(fellow['city'] ?? ''),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: () { /* Thêm hành động khi nhấn vào một guide trong modal */ },
       ),
     );
   }

@@ -17,7 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
 
   // Primary color from the design
-  final Color _appGreen = const Color(0xFF00B167);
+  final Color _appGreen = const Color(0xFF00C49F);
 
   // Supabase Google Login Handler
   Future<void> _loginWithGoogle() async {
@@ -72,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final url = Uri.parse('https://backend-mobile-44v9.onrender.com/api/v1/auth/login');
+      final url = Uri.parse('https://backend-mobile-api-a4n4.onrender.com/api/v1/auth/login');
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -297,6 +297,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             )
                           : const Text(
                               'SIGN IN',
+                              // style: TextStyle(color: Color(0xFF00C49F), fontWeight: FontWeight.bold),
+
                               style: TextStyle(
                                 fontSize: 16,
                                 color: Colors.white,
@@ -348,7 +350,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: const Text(
                           'Sign Up',
                           style: TextStyle(
-                              color: Color(0xFF00B167),
+                              color: Color(0xFF00C49F),
                               fontWeight: FontWeight.bold
                           ),
                         ),

@@ -27,7 +27,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('https://backend-mobile-44v9.onrender.com/api/v1/auth/forgotpassword'),
+        Uri.parse('https://backend-mobile-api-a4n4.onrender.com/api/v1/auth/forgotpassword'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email}),
       );
