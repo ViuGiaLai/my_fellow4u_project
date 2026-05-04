@@ -96,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // MODAL DÙNG CHUNG CHO CÁC SECTION "SEE MORE"
   void _showMoreModal(BuildContext context, String title, List<dynamic> items, Widget Function(dynamic) itemBuilder) {
     showModalBottomSheet(
       context: context,
@@ -263,7 +264,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
-
+  //  Tạo ListView chứa nhiều cards   
   Widget _buildTopJourneys() {
     if (_tours.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No journeys found')));
     return SizedBox(
@@ -279,7 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
+  // Tạo 1 card cụ thể (image + title + date...) 
   Widget _buildJourneyCard(dynamic tour) {
     return Container(
       width: 200,
@@ -315,6 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Tạo ListView chứa nhiều cards
   Widget _buildBestGuides() {
     if (_fellows.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No guides found')));
     return GridView.builder(
@@ -329,10 +331,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Tạo 1 card cụ thể (image + title + date...) 
   Widget _buildGuideCard(dynamic fellow) {
     final user = fellow['user'];
     final name = user != null ? '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}' : 'Unknown';
     final avatar = user != null ? user['avatar'] : 'https://via.placeholder.com/150';
+    final rating = fellow['rating']?.toDouble() ?? 0.0;
+    final reviewCount = fellow['reviewCount'] ?? 0;
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -352,10 +357,29 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(fellow['city'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(5, (index) {
+                if (index < rating.floor()) {
+                  return const Icon(Icons.star, size: 12, color: Colors.amber);
+                } else if (index < rating && index >= rating.floor()) {
+                  return const Icon(Icons.star_half, size: 12, color: Colors.amber);
+                } else {
+                  return const Icon(Icons.star_border, size: 12, color: Colors.amber);
+                }
+              }),
+            ),
+            const SizedBox(width: 4),
+            Text('($reviewCount)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          ],
+        ),
       ],
     );
   }
-
+  // Tạo ListView chứa nhiều cards
   Widget _buildTopExperiences() {
     if (_experiences.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No experiences found')));
     return SizedBox(
@@ -368,18 +392,21 @@ class _HomeScreenState extends State<HomeScreen> {
           final exp = _experiences[index];
           // Lấy 10 ký tự đầu của createdAt (YYYY-MM-DD)
           final dateStr = exp['createdAt']?.toString().substring(0, 10) ?? '';
+          final guide = exp['guide'];
           
           return _buildExperienceCard(
             exp['title'] ?? '', 
             exp['thumbnail'] ?? 'https://via.placeholder.com/250x180',
-            dateStr
+            dateStr,
+            guide
           );
         },
       ),
     );
   }
 
-  Widget _buildExperienceCard(String title, String imageUrl, String date) {
+  // Tạo 1 card cụ thể (image + title + date...)
+  Widget _buildExperienceCard(String title, String imageUrl, String date, dynamic guide) {
     return Container(
       width: 250,
       margin: const EdgeInsets.only(right: 16),
@@ -400,6 +427,57 @@ class _HomeScreenState extends State<HomeScreen> {
                 )
               )
             ),
+            // Avatar và tên guide ở góc trên bên trái
+            if (guide != null)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: ClipOval(
+                        child: Image.network(
+                          guide['avatar'] ?? 'https://via.placeholder.com/32',
+                          width: 32,
+                          height: 32,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => 
+                            Container(
+                              width: 32,
+                              height: 32,
+                              color: Colors.grey[300],
+                              child: const Icon(Icons.person, size: 16, color: Colors.white),
+                            ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${guide['firstName'] ?? ''} ${guide['lastName'] ?? ''}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.all(12.0),
               child: Column(
@@ -432,6 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Tạo ListView chứa nhiều cards    
   Widget _buildFeaturedTours() {
     if (_tours.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No tours found')));
     return Padding(
@@ -442,6 +521,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  //  Tạo 1 card cụ thể (image + title + date...) │
   Widget _buildTourCard(dynamic tour) {
     final id = tour['_id'] ?? '';
     final isFav = _favorites.contains(id);
@@ -504,7 +584,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
+  // Tạo ListView chứa nhiều cards  
   Widget _buildTravelNews() {
     if (_blogs.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No news found')));
     return Padding(
@@ -515,7 +595,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Tạo 1 card cụ thể (image + title + date...)
   Widget _buildNewsCard(dynamic blog) {
+    final author = blog['author'];
+    final authorName = author != null ? '${author['firstName'] ?? ''} ${author['lastName'] ?? ''}' : 'Unknown';
+    
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
@@ -531,7 +615,30 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(blog['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 4),
-                Text(blog['createdAt']?.toString().substring(0, 10) ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                Row(
+                  children: [
+                    Icon(Icons.person, size: 12, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        authorName,
+                        style: TextStyle(color: Colors.grey[600]!, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(blog['createdAt']?.toString().substring(0, 10) ?? '', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.favorite_border, size: 12, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text('${blog['likesCount'] ?? 0} likes', style: TextStyle(color: Colors.grey[600]!, fontSize: 12)),
+                  ],
+                ),
               ],
             ),
           ),

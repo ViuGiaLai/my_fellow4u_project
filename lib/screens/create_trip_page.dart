@@ -1,44 +1,179 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import '../services/api_service.dart';
 
-/// [StatefulWidget] ⭐ - Quản lý trạng thái nhập liệu, chọn ngày và chọn địa điểm
 class CreateNewTripPage extends StatefulWidget {
   const CreateNewTripPage({super.key});
 
   @override
-  State<CreateNewTripPage> createState() => _CreateTripPageState();
+  State<CreateNewTripPage> createState() => _CreateNewTripPageState();
 }
 
-class _CreateTripPageState extends State<CreateNewTripPage> {
-  // Controller để quản lý và nhập số lượng khách
+class _CreateNewTripPageState extends State<CreateNewTripPage> {
+  final _formKey = GlobalKey<FormState>();
+
+  // Controllers
+  final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _travelersController = TextEditingController(
     text: "1",
   );
-  // Controller để hiển thị ngày đã chọn
-  final TextEditingController _dateController = TextEditingController();
+  final TextEditingController _feeController = TextEditingController();
+  final TextEditingController _languagesController = TextEditingController();
 
-  // Danh sách lưu trạng thái các địa điểm đã chọn (Index)
-  final Set<int> _selectedAttractions = {}; 
+  DateTime? _selectedDate;
+  PlatformFile? _selectedFile;
 
-  @override
-  void dispose() {
-    _travelersController.dispose();
-    _dateController.dispose();
-    super.dispose();
+  bool _isLoading = false;
+
+  // ==================== CHỌN FILE (Hỗ trợ Web & Mobile) ====================
+  Future<void> _pickImage() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true, // Bắt buộc để lấy bytes trên Web
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        setState(() {
+          _selectedFile = result.files.first;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã chọn hình ảnh'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Lỗi khi chọn hình: $e')));
+    }
   }
 
-  // Hàm hiển thị bộ chọn ngày (Date Picker)
-  Future<void> _selectDate(BuildContext context) async {
+  Future<void> _selectDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2030),
     );
     if (picked != null) {
-      setState(() {
-        _dateController.text = "${picked.month}/${picked.day}/${picked.year}";
-      });
+      setState(() => _selectedDate = picked);
     }
+  }
+
+  Future<void> _createTrip() async {
+    setState(() => _isLoading = true);
+
+    try {
+      String? imageUrl;
+
+      // Upload image if selected
+      if (_selectedFile != null) {
+        String fileName = 'trip_${DateTime.now().millisecondsSinceEpoch}';
+        
+        // Get file bytes
+        Uint8List fileBytes;
+        if (kIsWeb && _selectedFile!.bytes != null) {
+          fileBytes = _selectedFile!.bytes!;
+        } else if (!kIsWeb && _selectedFile!.path != null) {
+          fileBytes = await File(_selectedFile!.path!).readAsBytes();
+        } else {
+          throw Exception('Cannot read file bytes');
+        }
+
+        imageUrl = await ApiService.uploadTripImage(fileBytes, fileName);
+        if (imageUrl == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Lỗi upload hình ảnh'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          // Continue anyway with null imageUrl
+        }
+      }
+
+      final result = await ApiService.createTrip(
+        title: "Trip to ${_destinationController.text}",
+        destination: _destinationController.text,
+        startDate: _selectedDate ?? DateTime.now(),
+        endDate: _selectedDate ?? DateTime.now().add(const Duration(days: 1)),
+        startTime: "09:00",
+        endTime: "17:00",
+        travelerCount: int.tryParse(_travelersController.text) ?? 1,
+        maxBudget: double.tryParse(_feeController.text),
+        requiredLanguages:
+            _languagesController.text.split(',').map((e) => e.trim()).toList(),
+        imageUrl: imageUrl,
+      );
+
+      if (result != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tạo chuyến đi thành công!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  /// Hiển thị ảnh đã chọn, hỗ trợ cả Web (bytes) và Mobile (path)
+  Widget _buildSelectedImage() {
+    if (_selectedFile == null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey),
+          SizedBox(height: 8),
+          Text(
+            "Chọn hình ảnh cho chuyến đi",
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      );
+    }
+
+    // Web: dùng bytes
+    if (kIsWeb) {
+      final Uint8List? bytes = _selectedFile!.bytes;
+      if (bytes != null) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.memory(bytes, fit: BoxFit.cover, width: double.infinity),
+        );
+      }
+      return const Center(child: Text("Không thể hiển thị ảnh"));
+    }
+
+    // Mobile: dùng path
+    final String? path = _selectedFile!.path;
+    if (path != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.file(
+          File(path),
+          fit: BoxFit.cover,
+          width: double.infinity,
+        ),
+      );
+    }
+
+    return const Center(child: Text("Không thể hiển thị ảnh"));
   }
 
   @override
@@ -48,9 +183,7 @@ class _CreateTripPageState extends State<CreateNewTripPage> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.close, color: Colors.black),
-          onPressed: () {
-            Navigator.of(context).maybePop();
-          },
+          onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           "Create New Trip",
@@ -65,123 +198,111 @@ class _CreateTripPageState extends State<CreateNewTripPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// 1. Where you want to explore (Có thể nhập được)
-            _label("Where you want to explore"),
-            _textField(Icons.location_on_outlined, "Vd: Danang, Vietnam"),
-
-            const SizedBox(height: 20),
-
-            /// 2. Date (Có thể nhập hoặc chọn từ lịch)
-            _label("Date"),
-            _textField(
-              Icons.calendar_today_outlined,
-              "mm/dd/yy",
-              controller: _dateController,
-              onTap: () => _selectDate(context),
+            const Text(
+              "Where you want to explore",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            TextField(
+              controller: _destinationController,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.location_on_outlined),
+                hintText: "e.g. Danang, Vietnam",
+                border: UnderlineInputBorder(),
+              ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            /// 3. Time (Có thể nhập được)
-            _label("Time"),
-            Row(
-              children: [
-                Expanded(child: _textField(Icons.access_time, "From")),
-                const SizedBox(width: 20),
-                Expanded(child: _textField(Icons.access_time, "To")),
-              ],
-            ),
-
-            const SizedBox(height: 20),
-
-            /// 4. Number of travelers (Có thể nhập số hoặc tăng giảm)
-            _label("Number of travelers"),
-            Row(
-              children: [
-                _counterBtn(Icons.arrow_drop_down, () {
-                  int val = int.tryParse(_travelersController.text) ?? 1;
-                  if (val > 1) {
-                    _travelersController.text = (val - 1).toString();
-                  }
-                }),
-                const SizedBox(width: 15),
-                Container(
-                  width: 80,
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: Colors.grey, width: 0.5),
-                    ),
-                  ),
-                  child: TextField(
-                    controller: _travelersController,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    decoration: const InputDecoration(border: InputBorder.none),
-                    style: const TextStyle(fontSize: 18),
+            const Text("Date", style: TextStyle(fontWeight: FontWeight.bold)),
+            GestureDetector(
+              onTap: _selectDate,
+              child: AbsorbPointer(
+                child: TextField(
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.calendar_today_outlined),
+                    hintText:
+                        _selectedDate != null
+                            ? "${_selectedDate!.month}/${_selectedDate!.day}/${_selectedDate!.year}"
+                            : "mm/dd/yy",
+                    border: const UnderlineInputBorder(),
                   ),
                 ),
-                const SizedBox(width: 15),
-                _counterBtn(Icons.arrow_drop_up, () {
-                  int val = int.tryParse(_travelersController.text) ?? 0;
-                  _travelersController.text = (val + 1).toString();
-                }),
-              ],
+              ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            /// 5. Fee (Có thể nhập được)
-            _label("Fee"),
-            _textField(
-              Icons.monetization_on_outlined,
-              "Fee",
-              suffix: "(\$/hour)",
-            ),
-
-            const SizedBox(height: 20),
-
-            /// 6. Guide's Language (Có thể nhập được)
-            _label("Guide's Language"),
-            _textField(Icons.public, "Vd: Korean, English"),
-
-            const SizedBox(height: 20),
-
-            /// 7. Attractions (Có thể nhấn chọn/bỏ chọn) ⭐
-            _label("Attractions"),
-            const SizedBox(height: 10),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.5,
+            const Text("Time", style: TextStyle(fontWeight: FontWeight.bold)),
+            Row(
               children: [
-                _buildAddButton(),
-                _attractionCard(
-                  1,
-                  "Dragon Bridge",
-                  "assets/images/DragonBridge.png",
-                ),
-                _attractionCard(
-                  2,
-                  "Cham Museum",
-                  "assets/images/ChamMuseum.png",
-                ),
-                _attractionCard(
-                  3,
-                  "My Khe Beach",
-                  "assets/images/MyKheBeach.png",
-                ),
+                Expanded(child: _timeField("From")),
+                const SizedBox(width: 16),
+                Expanded(child: _timeField("To")),
               ],
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
 
-            /// Nút DONE
+            const Text(
+              "Number of travelers",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            _travelerCounter(),
+
+            const SizedBox(height: 24),
+
+            const Text("Fee", style: TextStyle(fontWeight: FontWeight.bold)),
+            TextField(
+              controller: _feeController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.monetization_on_outlined),
+                hintText: "Fee",
+                suffixText: "(\$/hour)",
+                border: UnderlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            const Text(
+              "Guide's Language",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            TextField(
+              controller: _languagesController,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.public),
+                hintText: "e.g. Korean, English",
+                border: UnderlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            const Text(
+              "Trip Image",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            GestureDetector(
+              onTap: _pickImage,
+              child: Container(
+                height: 180,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: _buildSelectedImage(),
+              ),
+            ),
+
+            const SizedBox(height: 40),
+
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 52,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF00C49F),
@@ -189,16 +310,18 @@ class _CreateTripPageState extends State<CreateNewTripPage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                onPressed: () {
-                  // Xử lý khi nhấn hoàn tất
-                },
-                child: const Text(
-                  "DONE",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                onPressed: _isLoading ? null : _createTrip,
+                child:
+                    _isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
+                          "DONE",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
               ),
             ),
           ],
@@ -207,125 +330,54 @@ class _CreateTripPageState extends State<CreateNewTripPage> {
     );
   }
 
-  // --- Helper Widgets ---
-
-  Widget _label(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 4),
-    child: Text(
-      text,
-      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-    ),
-  );
-
-  // Widget TextField cho phép nhập liệu tự do
-  Widget _textField(
-    IconData icon,
-    String hint, {
-    TextEditingController? controller,
-    VoidCallback? onTap,
-    String? suffix,
-  }) {
+  Widget _timeField(String hint) {
     return TextField(
-      controller: controller,
-      onTap: onTap,
-      readOnly:
-          onTap !=
-          null, // Nếu có hàm onTap (như chọn ngày) thì không cho nhập phím
       decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.access_time),
         hintText: hint,
-        prefixIcon: Icon(icon, color: Colors.grey, size: 20),
-        suffixText: suffix,
-        suffixStyle: const TextStyle(color: Colors.black54),
-        enabledBorder: const UnderlineInputBorder(
-          borderSide: BorderSide(color: Colors.grey, width: 0.5),
-        ),
-        focusedBorder: const UnderlineInputBorder(
-          borderSide: BorderSide(color: Color(0xFF00C49F)),
-        ),
+        border: const UnderlineInputBorder(),
       ),
+    );
+  }
+
+  Widget _travelerCounter() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _counterBtn(Icons.remove, () {
+          int val = int.tryParse(_travelersController.text) ?? 1;
+          if (val > 1) {
+            setState(() {
+              _travelersController.text = (val - 1).toString();
+            });
+          }
+        }),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            _travelersController.text,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+        _counterBtn(Icons.add, () {
+          int val = int.tryParse(_travelersController.text) ?? 1;
+          setState(() {
+            _travelersController.text = (val + 1).toString();
+          });
+        }),
+      ],
     );
   }
 
   Widget _counterBtn(IconData icon, VoidCallback onTap) => GestureDetector(
     onTap: onTap,
     child: Container(
-      padding: const EdgeInsets.all(2),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(4),
+        shape: BoxShape.circle,
       ),
-      child: Icon(icon, color: const Color(0xFF00C49F), size: 28),
+      child: Icon(icon, color: const Color(0xFF00C49F)),
     ),
   );
-
-  Widget _buildAddButton() => Container(
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: Colors.grey.shade200),
-    ),
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
-        Icon(Icons.add, color: Color(0xFF00C49F)),
-        Text("Add New", style: TextStyle(color: Color(0xFF00C49F))),
-      ],
-    ),
-  );
-
-  // Widget Card địa điểm có tính năng nhấn để chọn/bỏ chọn
-  Widget _attractionCard(int id, String name, String url) {
-    bool isSelected = _selectedAttractions.contains(id);
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          if (isSelected) {
-            _selectedAttractions.remove(id);
-          } else {
-            _selectedAttractions.add(id);
-          }
-        });
-      },
-      child: Stack(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              url,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-            ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.black.withOpacity(0.6)],
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 8,
-            left: 8,
-            child: Text(
-              name,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
-          if (isSelected)
-            const Positioned(
-              top: 8,
-              right: 8,
-              child: CircleAvatar(
-                radius: 10,
-                backgroundColor: Color(0xFF00C49F),
-                child: Icon(Icons.check, color: Colors.white, size: 12),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 }

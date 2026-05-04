@@ -1,7 +1,13 @@
+// File: my_trips_app.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'create_trip_page.dart';
+import '../services/api_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env"); // Quan trọng
+
   runApp(const MyTripsApp());
 }
 
@@ -29,14 +35,40 @@ class MyTripsScreen extends StatefulWidget {
   State<MyTripsScreen> createState() => _MyTripsScreenState();
 }
 
-class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProviderStateMixin {
+class _MyTripsScreenState extends State<MyTripsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  double? temperature = 28; // Giả định nhiệt độ cho header
+  List<dynamic> _trips = [];
+  bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _loadTrips();
+  }
+
+  Future<void> _loadTrips() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final trips = await ApiService.getTrips();
+
+      setState(() {
+        _trips = trips;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Không thể tải dữ liệu. Vui lòng thử lại sau.";
+        _isLoading = false;
+      });
+      print("Lỗi load trips: $e");
+    }
   }
 
   @override
@@ -45,7 +77,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
     super.dispose();
   }
 
-  // Widget Header được cung cấp bởi người dùng
+  //  HEADER 
   Widget _buildCombinedHeader() {
     return Stack(
       clipBehavior: Clip.none,
@@ -55,7 +87,9 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
           width: double.infinity,
           decoration: const BoxDecoration(
             image: DecorationImage(
-              image: NetworkImage('https://res.cloudinary.com/dqe5syxc0/image/upload/v1769696289/Mask_Group_mejmh6.png'),
+              image: NetworkImage(
+                'https://res.cloudinary.com/dqe5syxc0/image/upload/v1769696289/Mask_Group_mejmh6.png',
+              ),
               fit: BoxFit.cover,
             ),
           ),
@@ -76,24 +110,51 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Explore', style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
+                    const Text(
+                      'Explore',
+                      style: TextStyle(
+                        fontSize: 40,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Row(
                           children: const [
-                            Icon(Icons.location_on, color: Colors.white, size: 14),
+                            Icon(
+                              Icons.location_on,
+                              color: Colors.white,
+                              size: 14,
+                            ),
                             SizedBox(width: 2),
-                            Text('Da Nang', style: TextStyle(color: Colors.white, fontSize: 14)),
+                            Text(
+                              'Da Nang',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.cloud_outlined, color: Colors.white, size: 30),
+                            const Icon(
+                              Icons.cloud_outlined,
+                              color: Colors.white,
+                              size: 30,
+                            ),
                             const SizedBox(width: 6),
-                            Text(temperature != null ? '${temperature!.round()}°C' : '--°C',
-                              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w400, color: Colors.white)),
+                            const Text(
+                              '28°C',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.white,
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -104,7 +165,6 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
             ),
           ),
         ),
-        // TabBar overlaying on header
         Positioned(
           bottom: -30,
           left: 0,
@@ -122,8 +182,10 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
               unselectedLabelColor: Colors.grey,
               indicatorColor: const Color(0xFF00BFA5),
               indicatorSize: TabBarIndicatorSize.label,
-              labelPadding: EdgeInsets.zero,
-              labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              labelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
               tabs: const [
                 Tab(text: 'Current Trips'),
                 Tab(text: 'Next Trips'),
@@ -143,7 +205,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
       body: Column(
         children: [
           _buildCombinedHeader(),
-          const SizedBox(height: 30), // Khoảng trống cho TabBar lấn lên
+          const SizedBox(height: 35),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -157,130 +219,160 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF00BFA5),
-        child: const Icon(Icons.add, color: Colors.white),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => CreateNewTripPage(),
-            ),
-          );
-        },
+
+    floatingActionButton: FloatingActionButton(
+      heroTag: 'trip_create_fab',
+      backgroundColor: const Color(0xFF00BFA5),
+      child: const Icon(Icons.add, color: Colors.white),
+      onPressed: () async {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CreateNewTripPage(),
+          ),
+        );
+
+        // Nếu tạo trip thành công (result == true), thì tải lại dữ liệu
+        if (result == true) {
+          _loadTrips();        // ← Refresh dữ liệu mới
+        }
+      },
+    ),
+    );
+  }
+
+  //  TABS 
+  Widget _buildCurrentTab() {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_errorMessage != null) return _buildErrorState();
+
+    final currentTrips =
+        _trips.where((trip) => trip['status'] == 'confirmed').toList();
+
+    if (currentTrips.isEmpty) {
+      return _buildEmptyState('No current trips');
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadTrips,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: currentTrips.length,
+        itemBuilder: (context, index) => _buildTripCard(currentTrips[index]),
       ),
     );
   }
 
-  // --- MÀN HÌNH CURRENT ---
-  Widget _buildCurrentTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildTripCard(
-          title: 'Dragon Bridge Trip',
-          location: 'Da Nang, Vietnam',
-          date: 'Jan 30, 2020',
-          time: '13:00 - 15:00',
-          host: 'Tuan Tran',
-          imageUrl: 'https://res.cloudinary.com/dqe5syxc0/image/upload/v1772716308/mytrip_drogan_qtwsyr.png',
-          status: 'Mark Finished',
-          isCurrent: true,
-        ),
-      ],
-    );
-  }
-
-  // --- MÀN HÌNH NEXT ---
   Widget _buildNextTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildTripCard(
-          title: 'Ho Guom Trip',
-          location: 'Hanoi, Vietnam',
-          date: 'Feb 2, 2020',
-          host: 'Emmy',
-          imageUrl: 'https://images.unsplash.com/photo-1555921015-5532091f6026?w=500',
-        ),
-        _buildTripCard(
-          title: 'Ho Chi Minh Mausoleum',
-          location: 'Hanoi, Vietnam',
-          date: 'Feb 2, 2020',
-          time: '8:00 - 10:00',
-          host: 'Emmy',
-          imageUrl: 'https://res.cloudinary.com/dqe5syxc0/image/upload/v1772716971/Mask_Group_jyste0.png',
-          status: 'Waiting',
-        ),
-        _buildTripCard(
-          title: 'Duc Ba Church',
-          location: 'Ho Chi Minh, Vietnam',
-          date: 'Feb 2, 2020',
-          time: '8:00 - 10:00',
-          host: 'Waiting for offers',
-          imageUrl: 'https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=500',
-          status: 'Bidding',
-        ),
-      ],
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_errorMessage != null) return _buildErrorState();
+
+    final nextTrips =
+        _trips.where((trip) => trip['status'] == 'waiting').toList();
+
+    if (nextTrips.isEmpty) return _buildEmptyState('No upcoming trips');
+
+    return RefreshIndicator(
+      onRefresh: _loadTrips,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: nextTrips.length,
+        itemBuilder: (context, index) => _buildTripCard(nextTrips[index]),
+      ),
     );
   }
 
-  // --- MÀN HÌNH PAST ---
   Widget _buildPastTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildTripCard(
-          title: 'Quoc Tu Giam Temple',
-          location: 'Hanoi, Vietnam',
-          date: 'Feb 2, 2020',
-          host: 'Emmy',
-          imageUrl: 'https://res.cloudinary.com/dqe5syxc0/image/upload/v1772717026/Mask_Group_1_slf7cu.png',
-        ),
-        _buildTripCard(
-          title: 'Dinh Doc Lap',
-          location: 'Ho Chi Minh, Vietnam',
-          date: 'Feb 2, 2020',
-          time: '8:00 - 10:00',
-          host: 'Khai Ho',
-          imageUrl: 'https://images.unsplash.com/photo-1563492065599-3520f775eeed?w=500',
-        ),
-      ],
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_errorMessage != null) return _buildErrorState();
+
+    final pastTrips =
+        _trips
+            .where(
+              (trip) =>
+                  trip['status'] == 'completed' ||
+                  trip['status'] == 'cancelled',
+            )
+            .toList();
+
+    if (pastTrips.isEmpty) return _buildEmptyState('No past trips');
+
+    return RefreshIndicator(
+      onRefresh: _loadTrips,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: pastTrips.length,
+        itemBuilder: (context, index) => _buildTripCard(pastTrips[index]),
+      ),
     );
   }
 
-  // --- MÀN HÌNH WISHLIST ---
   Widget _buildWishlistTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildWishlistCard(
-          title: 'Melbourne - Sydney',
-          location: 'Australia',
-          price: '600.00',
-          imageUrl: 'https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?w=500',
-        ),
-        _buildWishlistCard(
-          title: 'Hanoi - Ha Long Bay',
-          location: 'Vietnam',
-          price: '300.00',
-          imageUrl: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?w=500',
-        ),
-      ],
+    return _buildEmptyState('No wishlist items');
+  }
+
+  //  HELPERS 
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            _errorMessage!,
+            style: const TextStyle(color: Colors.red, fontSize: 16),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(onPressed: _loadTrips, child: const Text("Thử lại")),
+        ],
+      ),
     );
   }
 
-  // --- WIDGET TRIP CARD ---
-  Widget _buildTripCard({
-    required String title,
-    required String location,
-    required String date,
-    String? time,
-    required String host,
-    required String imageUrl,
-    String? status,
-    bool isCurrent = false,
-  }) {
+  Widget _buildEmptyState(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.card_travel, size: 80, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(onPressed: _loadTrips, child: const Text("Refresh")),
+        ],
+      ),
+    );
+  }
+
+  //  TRIP CARD 
+  Widget _buildTripCard(dynamic trip) {
+    final String title = trip['title'] ?? 'Untitled Trip';
+    final String location = trip['destination'] ?? '';
+    final String date = _formatDate(trip['startDate']);
+    final String? time =
+        (trip['startTime'] != null && trip['endTime'] != null)
+            ? '${trip['startTime']} - ${trip['endTime']}'
+            : null;
+    final String host = trip['host']?['name'] ?? 'Waiting for guide';
+    final String imageUrl = trip['imageUrl'] ?? '';
+    final String status = trip['status'] ?? '';
+
+    String displayStatus = '';
+    bool isCurrent = false;
+
+    if (status == 'confirmed') {
+      displayStatus = 'In Progress';
+      isCurrent = true;
+    } else if (status == 'waiting') {
+      displayStatus = 'Waiting';
+    } else if (status == 'completed') {
+      displayStatus = 'Completed';
+    } else if (status == 'cancelled') {
+      displayStatus = 'Cancelled';
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 20),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -291,33 +383,48 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
           Stack(
             children: [
               ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                child: Image.network(imageUrl, height: 160, width: double.infinity, fit: BoxFit.cover),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(15),
+                ),
+                child: Image.network(
+                  imageUrl.isNotEmpty
+                      ? imageUrl
+                      : 'https://via.placeholder.com/400x160?text=No+Image',
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder:
+                      (_, __, ___) =>
+                          Container(height: 160, color: Colors.grey[300]),
+                ),
               ),
-              if (status != null)
+              if (displayStatus.isNotEmpty)
                 Positioned(
                   top: 10,
                   left: 10,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.8),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isCurrent) const Icon(Icons.check, size: 14, color: Colors.black),
-                        if (isCurrent) const SizedBox(width: 4),
-                        Text(status, style: const TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ],
+                    child: Text(
+                      displayStatus,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
-              Positioned(
+              const Positioned(
                 top: 10,
                 right: 10,
-                child: const Icon(Icons.more_horiz, color: Colors.white),
+                child: Icon(Icons.more_horiz, color: Colors.white),
               ),
             ],
           ),
@@ -329,43 +436,77 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                    const CircleAvatar(radius: 30, backgroundImage: NetworkImage('https://res.cloudinary.com/dqe5syxc0/image/upload/v1772716233/avatar_cpp4hl.png')),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const CircleAvatar(
+                      radius: 30,
+                      backgroundImage: NetworkImage(
+                        'https://res.cloudinary.com/dqe5syxc0/image/upload/v1772716233/avatar_cpp4hl.png',
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.location_on, size: 14, color: Color(0xFF00BFA5)),
+                    const Icon(
+                      Icons.location_on,
+                      size: 14,
+                      color: Color(0xFF00BFA5),
+                    ),
                     const SizedBox(width: 4),
-                    Text(location, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                    Text(
+                      location,
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Row(
                   children: [
-                    const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                    const Icon(
+                      Icons.calendar_today,
+                      size: 14,
+                      color: Colors.grey,
+                    ),
                     const SizedBox(width: 6),
-                    Text(date, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                    Text(
+                      date,
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                   ],
                 ),
                 if (time != null) ...[
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                      const Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: Colors.grey,
+                      ),
                       const SizedBox(width: 6),
-                      Text(time, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      Text(
+                        time,
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ],
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.person, size: 14, color: Colors.grey),
-                    const SizedBox(width: 6),
-                    Text(host, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
+                const SizedBox(height: 8),
+                Text(
+                  host,
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
                 const SizedBox(height: 15),
                 Row(
@@ -376,10 +517,10 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
                     const SizedBox(width: 10),
                     _actionButton(Icons.payment, 'Pay'),
                   ],
-                )
+                ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );
@@ -390,7 +531,10 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
       child: OutlinedButton.icon(
         onPressed: () {},
         icon: Icon(icon, size: 16, color: const Color(0xFF00BFA5)),
-        label: Text(label, style: const TextStyle(color: Color(0xFF00BFA5), fontSize: 11)),
+        label: Text(
+          label,
+          style: const TextStyle(color: Color(0xFF00BFA5), fontSize: 11),
+        ),
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: Color(0xFF00BFA5)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -400,76 +544,13 @@ class _MyTripsScreenState extends State<MyTripsScreen> with SingleTickerProvider
     );
   }
 
-  // --- WIDGET WISHLIST CARD ---
-  Widget _buildWishlistCard({
-    required String title,
-    required String location,
-    required String price,
-    required String imageUrl,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      elevation: 2,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                child: Image.network(imageUrl, height: 150, width: double.infinity, fit: BoxFit.cover),
-              ),
-              const Positioned(
-                top: 10,
-                right: 10,
-                child: Icon(Icons.bookmark, color: Colors.white, size: 24),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.all(15),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const Icon(Icons.favorite_border, color: Color(0xFF00BFA5)),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  children: [
-                    const Icon(Icons.location_on, size: 14, color: Color(0xFF00BFA5)),
-                    const SizedBox(width: 4),
-                    Text(location, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.star, color: Colors.orange, size: 16),
-                        Icon(Icons.star, color: Colors.orange, size: 16),
-                        Icon(Icons.star, color: Colors.orange, size: 16),
-                        Icon(Icons.star, color: Colors.orange, size: 16),
-                        Icon(Icons.star_half, color: Colors.orange, size: 16),
-                        SizedBox(width: 5),
-                        Text('4.5 (120)', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                    Text(price, style: const TextStyle(color: Color(0xFF00BFA5), fontWeight: FontWeight.bold, fontSize: 18)),
-                  ],
-                )
-              ],
-            ),
-          )
-        ],
-      ),
-    );
+  String _formatDate(dynamic dateStr) {
+    if (dateStr == null) return '';
+    try {
+      final date = DateTime.parse(dateStr.toString());
+      return '${date.month}/${date.day}/${date.year}';
+    } catch (_) {
+      return dateStr.toString();
+    }
   }
 }

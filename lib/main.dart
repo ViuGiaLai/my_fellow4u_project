@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // Import các trang chính
 import 'screens/onboarding_screen.dart';
@@ -13,21 +16,27 @@ import 'screens/home_screen.dart';
 import 'screens/messages_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/profile_screen.dart';
-// import 'screens/check_email_screen.dart';
 import 'screens/my_trips_app.dart';
 import 'screens/ChatHomePage.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   await Supabase.initialize(
-    url: 'https://ieacrgscsrqtfxzebqdv.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllYWNyZ3Njc3JxdGZ4emVicWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUyMDQxOTcsImV4cCI6MjA4MDc4MDE5N30.trtd-J93Qr5FuRiW6wL9Mt3znp90pv9FvId5QydgIIM',
-   );
-  runApp(const MyApp());
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+  );
+  
+  final prefs = await SharedPreferences.getInstance();
+  final backendToken = prefs.getString('backend_token');
+  
+  runApp(MyApp(hasBackendToken: backendToken != null));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool hasBackendToken;
+  
+  const MyApp({super.key, required this.hasBackendToken});
 
   @override
   Widget build(BuildContext context) {
@@ -39,8 +48,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00B167)),
       ),
-      // Quyết định trang ban đầu dựa trên trạng thái đăng nhập
-      initialRoute: Supabase.instance.client.auth.currentSession == null ? '/' : '/main',
+      initialRoute: hasBackendToken ? '/main' : '/',
       routes: {
         '/': (context) => const OnboardingScreen(),
         '/login': (context) => const LoginScreen(),
@@ -55,7 +63,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// WIDGET MỚI: Quản lý BottomNavigationBar và các trang con
 class MainAppScaffold extends StatefulWidget {
   const MainAppScaffold({super.key});
 
@@ -67,13 +74,12 @@ class _MainAppScaffoldState extends State<MainAppScaffold> {
   int _selectedIndex = 0;
   late final StreamSubscription<AuthState> _authSubscription;
 
-  // Danh sách các trang tương ứng với các mục trong BottomNavBar
   static const List<Widget> _widgetOptions = <Widget>[
-    HomeScreen(title: 'Trang Chủ'), // Trang 0
-    MyTripsApp(),               // Trang 1
-    ChatListScreen(),               // Trang 2
-    NotificationsScreen(),          // Trang 3
-    ProfileScreen(),                // Trang 4
+    HomeScreen(title: 'Trang Chủ'),
+    MyTripsApp(),
+    ChatListScreen(),
+    NotificationsScreen(),
+    ProfileScreen(),
   ];
 
   void _onItemTapped(int index) {
@@ -85,11 +91,13 @@ class _MainAppScaffoldState extends State<MainAppScaffold> {
   @override
   void initState() {
     super.initState();
-    // Lắng nghe sự kiện đăng xuất để điều hướng người dùng về trang login
-    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+    // FIX: Chỉ redirect về login khi signedOut VÀ không còn backend token
+    // Tránh trường hợp Supabase fire signedOut khi đang dùng custom backend auth
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
       if (data.event == AuthChangeEvent.signedOut) {
-        // Đảm bảo không có lỗi khi widget đã bị hủy
-        if (mounted) {
+        final prefs = await SharedPreferences.getInstance();
+        final backendToken = prefs.getString('backend_token');
+        if (backendToken == null && mounted) {
           Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
         }
       }
@@ -102,15 +110,23 @@ class _MainAppScaffoldState extends State<MainAppScaffold> {
     super.dispose();
   }
 
+  // Hàm logout đúng cách: xóa backend token TRƯỚC, sau đó mới signOut Supabase
+  static Future<void> logout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('backend_token'); // Xóa token trước để tránh trigger sai
+    await Supabase.instance.client.auth.signOut(); // Supabase signOut sau
+    if (context.mounted) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Body sẽ thay đổi dựa trên _selectedIndex
       body: IndexedStack(
         index: _selectedIndex,
         children: _widgetOptions,
       ),
-      // Đây là BottomNavigationBar bạn muốn thêm
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.explore), label: 'Explore'),
@@ -123,10 +139,20 @@ class _MainAppScaffoldState extends State<MainAppScaffold> {
         selectedItemColor: const Color(0xFF00B167),
         unselectedItemColor: Colors.grey,
         onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed, // Để label luôn hiển thị
+        type: BottomNavigationBarType.fixed,
         showSelectedLabels: true,
         showUnselectedLabels: true,
       ),
     );
+  }
+}
+
+// Global logout function for easy access from anywhere
+Future<void> logout(BuildContext context) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove('backend_token'); // Xóa token trước để tránh trigger sai
+  await Supabase.instance.client.auth.signOut(); // Supabase signOut sau
+  if (context.mounted) {
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 }

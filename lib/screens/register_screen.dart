@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -32,11 +34,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
 }
 
   bool _isLoading = false;
+  
+  final baseUrl =
+    dotenv.env['USE_LOCAL'] == 'true'
+        ? dotenv.env['API_URL_LOCAL']
+        : dotenv.env['API_URL_PROD'];
 
-  final String _apiUrl = 'https://backend-mobile-api-a4n4.onrender.com/api/v1/auth/register';
+  String get _apiUrl => '$baseUrl/auth/register';
 
   Future<void> _handleRegister() async {
   if (!_formKey.currentState!.validate()) return;
+
+  print("API URL: $baseUrl");
 
   setState(() {
     _isLoading = true;

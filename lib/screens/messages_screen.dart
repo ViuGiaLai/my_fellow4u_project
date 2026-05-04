@@ -1,6 +1,7 @@
 // Ví dụ cho profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MessagesScreen extends StatelessWidget {
   const MessagesScreen({super.key});
@@ -12,10 +13,16 @@ class MessagesScreen extends StatelessWidget {
       body: Center(
         child: ElevatedButton(
           child: const Text('Sign Out'),
-          onPressed: () {
-            Supabase.instance.client.auth.signOut();
-            // Điều hướng về màn hình login sau khi đăng xuất
-            Navigator.pushReplacementNamed(context, '/login');
+          onPressed: () async {
+            // Xóa cả backend token và Supabase session
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.remove('backend_token');
+            await Supabase.instance.client.auth.signOut();
+            
+            // Điều hướng về màn hình login
+            if (context.mounted) {
+              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+            }
           },
         ),
       ),

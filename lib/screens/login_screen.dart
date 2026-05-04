@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -38,9 +41,6 @@ class _LoginScreenState extends State<LoginScreen> {
   // Supabase Facebook Login Handler
   Future<void> _loginWithFacebook() async {
     try {
-      // FIX: Thêm scopes cụ thể để tránh lỗi "Invalid Scopes: email"
-      // Mặc định Supabase có thể yêu cầu các scope không còn hợp lệ hoặc bị thay đổi bởi Facebook.
-      // Đảm bảo bạn đã thêm Use Case "Authentication and Account Creation" trong Facebook Developer Console.
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.facebook,
         redirectTo: 'io.supabase.flutter://login-callback',
@@ -72,7 +72,15 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final url = Uri.parse('https://backend-mobile-api-a4n4.onrender.com/api/v1/auth/login');
+      final useLocal = dotenv.env['USE_LOCAL'] == 'true';
+      final baseUrl = useLocal
+          ? dotenv.env['API_URL_LOCAL']
+          : dotenv.env['API_URL_PROD'];
+      final url = Uri.parse('$baseUrl/auth/login');
+
+      print("API URL: $baseUrl");
+      debugPrint('Login URL: $url');
+      
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -82,7 +90,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }),
       );
 
-      // Debug: print status and body so you can inspect what the server returns
       debugPrint('Login response: ${response.statusCode}');
       debugPrint('Login body: ${response.body}');
 
@@ -96,18 +103,33 @@ class _LoginScreenState extends State<LoginScreen> {
       if (response.statusCode == 200) {
         bool success = false;
         if (data is Map) {
-          // many APIs return { success: true } or return token/accessToken on success
           success = data['success'] == true || data.containsKey('token') || data.containsKey('accessToken');
         }
 
         if (success) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Login successful!')),
-            );
-            // Navigate to main screen which contains the bottom navigation
-            Navigator.pushReplacementNamed(context, '/main');
-          }
+            if (data is Map) {
+    final tokenValue = data['token'] ?? data['accessToken'];
+    if (tokenValue is String && tokenValue.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('backend_token', tokenValue);
+        debugPrint('✅ Token saved');
+      } catch (e) {
+        debugPrint('⚠️ SharedPreferences error (non-fatal): $e');
+        // Không return ở đây - vẫn tiếp tục navigate
+      }
+    }
+  }
+
+           if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Login successful!')),
+    );
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/main',
+      (route) => false,
+    );
+  }
         } else {
           String errorMessage = 'Login failed';
           if (data is Map) {
@@ -263,7 +285,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     alignment: Alignment.centerLeft,
                     child: TextButton(
                       onPressed: () {
-                        // Chuyển hướng đến màn hình Forgot Password bằng route đã định nghĩa trong main.dart
                         Navigator.pushNamed(context, '/forgot-password');
                       },
                       style: TextButton.styleFrom(padding: EdgeInsets.zero),
@@ -297,8 +318,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             )
                           : const Text(
                               'SIGN IN',
-                              // style: TextStyle(color: Color(0xFF00C49F), fontWeight: FontWeight.bold),
-
                               style: TextStyle(
                                 fontSize: 16,
                                 color: Colors.white,
@@ -325,13 +344,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildSocialButton('https://cdn-icons-png.flaticon.com/512/124/124010.png', _loginWithFacebook), // FB
+                      _buildSocialButton('https://cdn-icons-png.flaticon.com/512/124/124010.png', _loginWithFacebook),
                       const SizedBox(width: 20),
-                      _buildSocialButton('https://cdn-icons-png.flaticon.com/512/2991/2991148.png', _loginWithGoogle), // Google
+                      _buildSocialButton('https://cdn-icons-png.flaticon.com/512/2991/2991148.png', _loginWithGoogle),
                       const SizedBox(width: 20),
-                      _buildSocialButton('https://cdn-icons-png.flaticon.com/512/2111/2111466.png', () {}), // Kakao
+                      _buildSocialButton('https://cdn-icons-png.flaticon.com/512/2111/2111466.png', () {}),
                       const SizedBox(width: 20),
-                      _buildSocialButton('https://cdn-icons-png.flaticon.com/512/124/124011.png', () {}), // Line
+                      _buildSocialButton('https://cdn-icons-png.flaticon.com/512/124/124011.png', () {}),
                     ],
                   ),
                   
@@ -344,7 +363,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       const Text("Don't have an account? ", style: TextStyle(color: Colors.grey)),
                       GestureDetector(
                         onTap: () {
-                          // Chuyển hướng đến trang đăng ký bằng tên route đã định nghĩa
                           Navigator.pushNamed(context, '/register');
                         },
                         child: const Text(
