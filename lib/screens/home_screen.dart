@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import 'guide_profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.title});
@@ -71,14 +72,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _toggleFavorite(String id) async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // Lấy wishlist hiện tại
+    final wishlistJson = prefs.getString('wishlist_items') ?? '[]';
+    final List<dynamic> wishlist = json.decode(wishlistJson);
+    
     setState(() {
       if (_favorites.contains(id)) {
+        // Xóa khỏi wishlist
+        print("❤️ Removing $id from favorites");
         _favorites.remove(id);
+        wishlist.removeWhere((item) => item['_id'] == id);
       } else {
+        // Thêm vào wishlist
+        print("❤️ Adding $id to favorites");
         _favorites.add(id);
+        
+        try {
+          final tour = _tours.firstWhere((t) => t['_id'] == id);
+          print("✅ Found tour: ${tour['title']}");
+          wishlist.add(tour);
+        } catch (e) {
+          print("❌ Tour not found in _tours: $e");
+          // Nếu không tìm thấy trong _tours, tạo object đơn giản
+          wishlist.add({'_id': id});
+        }
       }
     });
+    
+    print("📝 Wishlist now has ${wishlist.length} items");
+    
+    // Lưu cả favorites ID list và full trip data
     await prefs.setStringList('favorites', _favorites.toList());
+    await prefs.setString('wishlist_items', json.encode(wishlist));
+    
+    print("💾 Saved to SharedPreferences");
   }
 
   Future<void> _fetchWeather() async {
@@ -339,44 +367,54 @@ class _HomeScreenState extends State<HomeScreen> {
     final rating = fellow['rating']?.toDouble() ?? 0.0;
     final reviewCount = fellow['reviewCount'] ?? 0;
     
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: Image.network(avatar, width: double.infinity, fit: BoxFit.cover),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GuideProfileScreen(fellow: fellow),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        Row(
-          children: [
-            const Icon(Icons.location_on, size: 12, color: Color(0xFF00CEA6)),
-            const SizedBox(width: 4),
-            Text(fellow['city'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(5, (index) {
-                if (index < rating.floor()) {
-                  return const Icon(Icons.star, size: 12, color: Colors.amber);
-                } else if (index < rating && index >= rating.floor()) {
-                  return const Icon(Icons.star_half, size: 12, color: Colors.amber);
-                } else {
-                  return const Icon(Icons.star_border, size: 12, color: Colors.amber);
-                }
-              }),
+        );
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(15),
+              child: Image.network(avatar, width: double.infinity, fit: BoxFit.cover),
             ),
-            const SizedBox(width: 4),
-            Text('($reviewCount)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-          ],
-        ),
-      ],
+          ),
+          const SizedBox(height: 8),
+          Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              const Icon(Icons.location_on, size: 12, color: Color(0xFF00CEA6)),
+              const SizedBox(width: 4),
+              Text(fellow['city'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(5, (index) {
+                  if (index < rating.floor()) {
+                    return const Icon(Icons.star, size: 12, color: Colors.amber);
+                  } else if (index < rating && index >= rating.floor()) {
+                    return const Icon(Icons.star_half, size: 12, color: Colors.amber);
+                  } else {
+                    return const Icon(Icons.star_border, size: 12, color: Colors.amber);
+                  }
+                }),
+              ),
+              const SizedBox(width: 4),
+              Text('($reviewCount)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            ],
+          ),
+        ],
+      ),
     );
   }
   // Tạo ListView chứa nhiều cards
@@ -652,12 +690,22 @@ class _HomeScreenState extends State<HomeScreen> {
     final name = user != null ? '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}' : 'Unknown';
     final avatar = user != null ? user['avatar'] : 'https://via.placeholder.com/150';
 
-    return Card(
-      child: ListTile(
-        leading: CircleAvatar(backgroundImage: NetworkImage(avatar)),
-        title: Text(name),
-        subtitle: Text(fellow['city'] ?? ''),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GuideProfileScreen(fellow: fellow),
+          ),
+        );
+      },
+      child: Card(
+        child: ListTile(
+          leading: CircleAvatar(backgroundImage: NetworkImage(avatar)),
+          title: Text(name),
+          subtitle: Text(fellow['city'] ?? ''),
+          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        ),
       ),
     );
   }

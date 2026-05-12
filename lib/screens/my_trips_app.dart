@@ -1,6 +1,8 @@
 // File: my_trips_app.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'create_trip_page.dart';
 import '../services/api_service.dart';
 
@@ -39,6 +41,8 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<dynamic> _trips = [];
+  List<dynamic> _wishlistItems = [];
+  Set<String> _wishlistIds = {};
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -47,6 +51,14 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _loadTrips();
+    _loadWishlist();
+
+    // Reload wishlist khi user tab sang Wish List (tab index 3)
+    _tabController.addListener(() {
+      if (_tabController.index == 3) {
+        _loadWishlist();
+      }
+    });
   }
 
   Future<void> _loadTrips() async {
@@ -71,13 +83,61 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     }
   }
 
+  Future<void> _loadWishlist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final wishlistJson = prefs.getString('wishlist_items') ?? '[]';
+      final List<dynamic> wishlist = json.decode(wishlistJson);
+
+      setState(() {
+        _wishlistItems = wishlist;
+        _wishlistIds = {for (var item in wishlist) item['_id'] ?? ''};
+      });
+
+      print("✅ Loaded ${_wishlistItems.length} wishlist items");
+      print("📋 Wishlist IDs: ${_wishlistIds.toString()}");
+      if (_wishlistItems.isNotEmpty) {
+        print("📌 First item: ${_wishlistItems[0]['title'] ?? 'N/A'}");
+      }
+    } catch (e) {
+      print("❌ Error loading wishlist: $e");
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
   }
 
-  //  HEADER 
+  Future<void> _refreshWishlist() async {
+    await _loadWishlist();
+  }
+
+  Future<void> _toggleFavorite(String tripId, dynamic tripData) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Lấy wishlist hiện tại
+    final wishlistJson = prefs.getString('wishlist_items') ?? '[]';
+    final List<dynamic> wishlist = json.decode(wishlistJson);
+
+    setState(() {
+      if (_wishlistIds.contains(tripId)) {
+        _wishlistIds.remove(tripId);
+        _wishlistItems.removeWhere((item) => item['_id'] == tripId);
+        wishlist.removeWhere((item) => item['_id'] == tripId);
+      } else {
+        _wishlistIds.add(tripId);
+        _wishlistItems.add(tripData);
+        wishlist.add(tripData);
+      }
+    });
+
+    // Lưu vào SharedPreferences để sync với home screen
+    await prefs.setString('wishlist_items', json.encode(wishlist));
+  }
+
+  //  HEADER
   Widget _buildCombinedHeader() {
     return Stack(
       clipBehavior: Clip.none,
@@ -220,28 +280,26 @@ class _MyTripsScreenState extends State<MyTripsScreen>
         ],
       ),
 
-    floatingActionButton: FloatingActionButton(
-      heroTag: 'trip_create_fab',
-      backgroundColor: const Color(0xFF00BFA5),
-      child: const Icon(Icons.add, color: Colors.white),
-      onPressed: () async {
-        final result = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CreateNewTripPage(),
-          ),
-        );
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'trip_create_fab',
+        backgroundColor: const Color(0xFF00BFA5),
+        child: const Icon(Icons.add, color: Colors.white),
+        onPressed: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const CreateNewTripPage()),
+          );
 
-        // Nếu tạo trip thành công (result == true), thì tải lại dữ liệu
-        if (result == true) {
-          _loadTrips();        // ← Refresh dữ liệu mới
-        }
-      },
-    ),
+          // Nếu tạo trip thành công (result == true), thì tải lại dữ liệu
+          if (result == true) {
+            _loadTrips(); // ← Refresh dữ liệu mới
+          }
+        },
+      ),
     );
   }
 
-  //  TABS 
+  //  TABS
   Widget _buildCurrentTab() {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_errorMessage != null) return _buildErrorState();
@@ -308,10 +366,21 @@ class _MyTripsScreenState extends State<MyTripsScreen>
   }
 
   Widget _buildWishlistTab() {
-    return _buildEmptyState('No wishlist items');
+    if (_wishlistItems.isEmpty) {
+      return _buildEmptyState('No wishlist items');
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshWishlist,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _wishlistItems.length,
+        itemBuilder: (context, index) => _buildTripCard(_wishlistItems[index]),
+      ),
+    );
   }
 
-  //  HELPERS 
+  //  HELPERS
   Widget _buildErrorState() {
     return Center(
       child: Column(
@@ -346,8 +415,9 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     );
   }
 
-  //  TRIP CARD 
+  //  TRIP CARD
   Widget _buildTripCard(dynamic trip) {
+    final String id = trip['_id'] ?? trip['id'] ?? '';
     final String title = trip['title'] ?? 'Untitled Trip';
     final String location = trip['destination'] ?? '';
     final String date = _formatDate(trip['startDate']);
@@ -356,8 +426,9 @@ class _MyTripsScreenState extends State<MyTripsScreen>
             ? '${trip['startTime']} - ${trip['endTime']}'
             : null;
     final String host = trip['host']?['name'] ?? 'Waiting for guide';
-    final String imageUrl = trip['imageUrl'] ?? '';
+    final String imageUrl = trip['thumbnail'] ?? trip['imageUrl'] ?? '';
     final String status = trip['status'] ?? '';
+    final bool isFavorite = _wishlistIds.contains(id);
 
     String displayStatus = '';
     bool isCurrent = false;
@@ -386,17 +457,34 @@ class _MyTripsScreenState extends State<MyTripsScreen>
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(15),
                 ),
-                child: Image.network(
-                  imageUrl.isNotEmpty
-                      ? imageUrl
-                      : 'https://via.placeholder.com/400x160?text=No+Image',
-                  height: 160,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder:
-                      (_, __, ___) =>
-                          Container(height: 160, color: Colors.grey[300]),
-                ),
+                child:
+                    imageUrl.isNotEmpty
+                        ? Image.network(
+                          imageUrl,
+                          height: 160,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder:
+                              (_, __, ___) => Container(
+                                height: 160,
+                                color: Colors.grey[300],
+                                child: const Icon(
+                                  Icons.image_not_supported,
+                                  color: Colors.grey,
+                                  size: 50,
+                                ),
+                              ),
+                        )
+                        : Container(
+                          height: 160,
+                          width: double.infinity,
+                          color: Colors.grey[300],
+                          child: const Icon(
+                            Icons.image_not_supported,
+                            color: Colors.grey,
+                            size: 50,
+                          ),
+                        ),
               ),
               if (displayStatus.isNotEmpty)
                 Positioned(
@@ -421,6 +509,18 @@ class _MyTripsScreenState extends State<MyTripsScreen>
                     ),
                   ),
                 ),
+              Positioned(
+                top: 10,
+                right: 50,
+                child: InkWell(
+                  onTap: () => _toggleFavorite(id, trip),
+                  child: Icon(
+                    isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: isFavorite ? const Color(0xFF00BFA5) : Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
               const Positioned(
                 top: 10,
                 right: 10,
