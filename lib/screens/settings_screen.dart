@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../repositories/user_repository.dart';
 import 'profile_screen.dart';
 import 'edit_profile_screen.dart';
 import '../main.dart';
@@ -27,19 +28,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadUserData() async {
     try {
-      final userProfile = await ApiService.getUserProfile();
-      if (userProfile != null) {
+      final userRepo = UserRepository();
+      final userProfile = await userRepo.getUserProfile();
+      if (userProfile != null && mounted) {
         setState(() {
-          _userName = userProfile['firstName'] != null && userProfile['lastName'] != null
-              ? '${userProfile['firstName']} ${userProfile['lastName']}'
-              : userProfile['email']?.split('@').first ?? 'User';
-          _avatarUrl = userProfile['avatarUrl'] ?? userProfile['avatar_url'];
+          _userName = userProfile.name ?? userProfile.email?.split('@').first ?? 'User';
+          _avatarUrl = userProfile.avatarUrl;
           _isLoading = false;
         });
       }
     } catch (e) {
-      print('Error loading user data: $e');
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể tải dữ liệu. Vui lòng thử lại!'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

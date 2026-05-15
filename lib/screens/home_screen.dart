@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/api_service.dart' show NetworkException, TimeoutException, ApiException;
 import 'guide_profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,8 +19,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   // WEATHER
   double? temperature;
-  final String _apiKey = '5cd5d5d2d7a8b76cf116dd99d4cf4668';
-  final String _city = 'Da Nang';
+  static const String _apiKey = '5cd5d5d2d7a8b76cf116dd99d4cf4668';
+  static const String _city = 'Da Nang';
 
   // Favorites
   Set<String> _favorites = {};
@@ -47,19 +49,68 @@ class _HomeScreenState extends State<HomeScreen> {
         ApiService.getFellows(),
         ApiService.getPlaces(),
         ApiService.getBlogs(),
-        ApiService.getExperiences(), // 👈 Thêm gọi API mới
+        ApiService.getExperiences(),
       ]);
-      setState(() {
-        _tours = results[0];
-        _fellows = results[1];
-        _places = results[2];
-        _blogs = results[3];
-        _experiences = results[4]; // 👈 Gán dữ liệu
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _tours = results[0];
+          _fellows = results[1];
+          _places = results[2];
+          _blogs = results[3];
+          _experiences = results[4];
+          _isLoading = false;
+        });
+      }
+    } on NetworkException catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Thử lại',
+              textColor: Colors.white,
+              onPressed: _loadApiData,
+            ),
+          ),
+        );
+      }
+    } on TimeoutException catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.orange,
+            action: SnackBarAction(
+              label: 'Thử lại',
+              textColor: Colors.white,
+              onPressed: _loadApiData,
+            ),
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
-      print('Error loading API data: $e');
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã xảy ra lỗi. Vui lòng thử lại!'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -80,33 +131,33 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       if (_favorites.contains(id)) {
         // Xóa khỏi wishlist
-        print("❤️ Removing $id from favorites");
+        debugPrint("❤️ Removing $id from favorites");
         _favorites.remove(id);
         wishlist.removeWhere((item) => item['_id'] == id);
       } else {
         // Thêm vào wishlist
-        print("❤️ Adding $id to favorites");
+        debugPrint("❤️ Adding $id to favorites");
         _favorites.add(id);
         
         try {
           final tour = _tours.firstWhere((t) => t['_id'] == id);
-          print("✅ Found tour: ${tour['title']}");
+          debugPrint("✅ Found tour: ${tour['title']}");
           wishlist.add(tour);
         } catch (e) {
-          print("❌ Tour not found in _tours: $e");
+          debugPrint("❌ Tour not found in _tours: $e");
           // Nếu không tìm thấy trong _tours, tạo object đơn giản
           wishlist.add({'_id': id});
         }
       }
     });
     
-    print("📝 Wishlist now has ${wishlist.length} items");
+    debugPrint("📝 Wishlist now has ${wishlist.length} items");
     
     // Lưu cả favorites ID list và full trip data
     await prefs.setStringList('favorites', _favorites.toList());
     await prefs.setString('wishlist_items', json.encode(wishlist));
     
-    print("💾 Saved to SharedPreferences");
+    debugPrint("💾 Saved to SharedPreferences");
   }
 
   Future<void> _fetchWeather() async {
@@ -120,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      print('Lỗi kết nối thời tiết: $e');
+      debugPrint('Lỗi kết nối thời tiết: $e');
     }
   }
 

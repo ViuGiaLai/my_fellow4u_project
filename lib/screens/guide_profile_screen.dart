@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
 
 class GuideProfileScreen extends StatefulWidget {
   final dynamic fellow;
 
-  const GuideProfileScreen({Key? key, required this.fellow}) : super(key: key);
+  const GuideProfileScreen({super.key, required this.fellow});
 
   @override
   _GuideProfileScreenState createState() => _GuideProfileScreenState();

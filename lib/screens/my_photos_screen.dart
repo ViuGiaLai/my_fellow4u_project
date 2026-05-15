@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:typed_data';
-import '../services/api_service.dart';
+import '../models/photo.dart';
+import '../repositories/photo_repository.dart' show PhotoException, PhotoRepository;
 
 class MyPhotosScreen extends StatefulWidget {
   const MyPhotosScreen({super.key});
@@ -11,7 +11,7 @@ class MyPhotosScreen extends StatefulWidget {
 }
 
 class _MyPhotosScreenState extends State<MyPhotosScreen> {
-  List<dynamic> _photos = [];
+  List<Photo> _photos = [];
   bool _isLoading = true;
 
   @override
@@ -23,13 +23,20 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
   Future<void> _loadPhotos() async {
     setState(() => _isLoading = true);
     try {
-      final photos = await ApiService.getUserPhotos();
+      final photoRepo = PhotoRepository();
+      final photos = await photoRepo.getUserPhotos();
       setState(() {
         _photos = photos;
         _isLoading = false;
       });
+    } on PhotoException catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
     } catch (e) {
-      print('Error loading photos: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -48,66 +55,89 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
         final fileName = file.name;
         
         if (bytes != null) {
-          final uploadResult = await ApiService.uploadPhoto(bytes, fileName, null);
+          final photoRepo = PhotoRepository();
+          final uploadResult = await photoRepo.uploadPhoto(bytes, fileName, null);
           
           if (uploadResult != null) {
-            _loadPhotos(); // Refresh photos
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Photo uploaded successfully!'),
-                backgroundColor: Colors.green,
-              ),
-            );
+            _loadPhotos();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Photo uploaded successfully!'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to upload photo'),
-                backgroundColor: Colors.red,
-              ),
-            );
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Failed to upload photo'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
           }
         }
       }
+    } on PhotoException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
     } catch (e) {
-      print('Error adding photo: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error uploading photo'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error uploading photo'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _deletePhoto(String photoUrl) async {
     try {
-      final success = await ApiService.deletePhoto(photoUrl);
+      final photoRepo = PhotoRepository();
+      final success = await photoRepo.deletePhoto(photoUrl);
       if (success) {
-        // Đợi Supabase cập nhật
         await Future.delayed(const Duration(milliseconds: 500));
-        await _loadPhotos(); // Refresh photos
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Photo deleted successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        await _loadPhotos();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Photo deleted successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to delete photo'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } on PhotoException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to delete photo'),
+            content: Text('Error deleting photo'),
             backgroundColor: Colors.red,
           ),
         );
       }
-    } catch (e) {
-      print('Error deleting photo: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error deleting photo'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
@@ -147,14 +177,12 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
                     mainAxisSpacing: 12,
                     childAspectRatio: 1.0,
                   ),
-                  itemCount: _photos.length + 1, // Add Photos button + photos
+                  itemCount: _photos.length + 1,
                   itemBuilder: (context, index) {
                     if (index == 0) {
-                      // Add Photos button
-                      return _buildAddPhotosButton();
+                      return buildAddPhotosButton();
                     } else {
-                      // Photo items
-                      return _buildPhotoItem(_photos[index - 1]);
+                      return buildPhotoItem(_photos[index - 1]);
                     }
                   },
                 ),
@@ -163,7 +191,7 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
     );
   }
 
-  Widget _buildAddPhotosButton() {
+  Widget buildAddPhotosButton() {
     return GestureDetector(
       onTap: _addPhoto,
       child: Container(
@@ -175,10 +203,10 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
+            const Icon(
               Icons.add,
               size: 40,
-              color: const Color(0xFF3EC8B0),
+              color: Color(0xFF3EC8B0),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -195,9 +223,8 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
     );
   }
 
-  Widget _buildPhotoItem(dynamic photo) {
-    final String photoUrl = photo['url'] ?? photo.toString();
-    final String photoId = photo['id']?.toString() ?? photoUrl;
+  Widget buildPhotoItem(Photo photo) {
+    final String photoUrl = photo.url;
 
     return Container(
       decoration: BoxDecoration(
@@ -209,7 +236,6 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Load network image
             Image.network(
               photoUrl,
               fit: BoxFit.cover,
@@ -236,12 +262,11 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
                 );
               },
             ),
-            // Delete button overlay
             Positioned(
               top: 8,
               right: 8,
               child: GestureDetector(
-                onTap: () => _showDeleteDialog(photoUrl),
+                onTap: () => showDeleteDialog(photo.url),
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
@@ -262,7 +287,7 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
     );
   }
 
-  void _showDeleteDialog(String photoUrl) {
+  void showDeleteDialog(String photoUrl) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

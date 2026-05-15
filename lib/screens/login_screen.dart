@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -78,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
           : dotenv.env['API_URL_PROD'];
       final url = Uri.parse('$baseUrl/auth/login');
 
-      print("API URL: $baseUrl");
+      debugPrint("API URL: $baseUrl");
       debugPrint('Login URL: $url');
       
       final response = await http.post(

@@ -1,179 +1,269 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ==== API SERVICE - TỔNG KẾT ĐIỂM: 
-// Tìm nhanh: Ctrl+Shift+F → gõ API #1, API #2, ... hoặc AUTH #1, AUTH #2
-// 
-// API #1: getTours        - GET /tours           (public)     → home_screen.dart
-// API #2: getFellows     - GET /fellows        (public)     → home_screen.dart
-// API #3: getPlaces     - GET /places        (public)     → home_screen.dart, add_new_attractions_screen.dart
-// API #4: getBlogs      - GET /blogs         (public)     → home_screen.dart
-// API #5: getExperiences - GET /experiences  (public)     → home_screen.dart
-// API #6a: getTrips     - GET /trips         (auth)       → my_trips_app.dart, profile_screen.dart
-// API #6b: getTrip      - GET /trips/:id     (auth)       → trip_info_screen.dart
-// API #6c: createTrip  - POST /trips        (auth)       → create_trip_page.dart, trip_info_screen.dart
-// API #6d: updateTrip - PUT /trips/:id      (auth)       → edit_trip_page.dart
-// API #6e: deleteTrip - DELETE /trips/:id   (auth)       → my_trips_app.dart
-// API #7a: getUserProfile   - GET /users/profile  (auth) → profile_screen.dart, settings_screen.dart, edit_profile_screen.dart
-// API #7b: updateUserProfile - PUT /users/profile (auth) → edit_profile_screen.dart
-// API #7c: getMe       - GET /auth/me        (auth)     → auth_provider.dart
-// API #8a: getUserPhotos - GET /photos         (auth)     → my_photos_screen.dart
-// API #8b: uploadPhoto  - POST /photos       (auth + Supabase) → my_photos_screen.dart
-// API #8c: deletePhoto - DELETE /photos/:id (auth)     → my_photos_screen.dart
-// API #9a: getConversations - GET /chat/conversations (auth) → ChatHomePage.dart
-// API #9b: getMessages - GET /chat/conversations/:id/messages (auth) → ChatHomePage.dart
-// API #9c: sendMessage - POST /chat/messages (auth)    → ChatHomePage.dart
-// API #9d: createConversation - POST /chat/conversations (auth) → ChatHomePage.dart
-// API #9e: searchChatUsers - GET /chat/users (auth)    → ChatHomePage.dart
-//
-// AUTH #1: Backend Token (SharedPreferences)     → _getToken()
-// AUTH #2: Bearer Token (Authorization header)   → getHeaders()
-// AUTH #3: Supabase Auth (Supabase.instance.client.auth.currentUser) → uploadTripImage(), uploadPhoto()
-// 
+// CUSTOM EXCEPTIONS - Exception classes for API error handling
 
+/// API Exception - thrown when API returns error or request fails
+// Usage: catch (e) { if (e is ApiException) ... }
+class ApiException implements Exception {
+  final String message;
+  final int? statusCode;
+  final String? endpoint;
+
+  ApiException(this.message, {this.statusCode, this.endpoint});
+
+  @override
+  String toString() => 'ApiException: $message${statusCode != null ? ' (status: $statusCode)' : ''}';
+}
+
+/// Network Exception - thrown when there's no internet connection
+// Usage: catch (e) { if (e is NetworkException) ... }
+class NetworkException implements Exception {
+  final String message;
+  NetworkException(this.message);
+
+  @override
+  String toString() => 'NetworkException: $message';
+}
+
+/// Timeout Exception - thrown when request takes too long
+// Usage: catch (e) { if (e is TimeoutException) ... }
+class TimeoutException implements Exception {
+  final String message;
+  TimeoutException(this.message);
+
+  @override
+  String toString() => 'TimeoutException: $message';
+}
+
+// API SERVICE - Main API class for all HTTP requests
+
+/// API Service class with timeout, retry, and error handling
+// Usage: ApiService.getTours(), ApiService.getUserProfile(), etc.
 class ApiService {
-  // BASE URL 
+  // Timeout duration for all API requests
+  static const Duration _timeout = Duration(seconds: 30);
+  // Maximum retry attempts for failed requests
+  static const int _maxRetries = 3;
+
+  // BASE URL - Get current API base URL from environment
+  // Usage: ApiService.baseUrl
   static String get baseUrl {
     final useLocal = dotenv.env['USE_LOCAL'] == 'true';
-    final url =
-        useLocal ? dotenv.env['API_URL_LOCAL']! : dotenv.env['API_URL_PROD']!;
-    print("🌐 Base URL đang dùng: $url");
+    var url = useLocal ? dotenv.env['API_URL_LOCAL']! : dotenv.env['API_URL_PROD']!;
+    
+    // Flutter Web: replace localhost with 127.0.0.1 to avoid CORS issues
+    if (kIsWeb && url.contains('localhost')) {
+      url = url.replaceAll('localhost', '127.0.0.1');
+    }
+    
+    debugPrint("🌐 Base URL: $url");
     return url;
   }
 
-  // TOKEN 
-  static Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    final backendToken = prefs.getString('backend_token');
+  // CHECK INTERNET - Verify internet connection
 
-    print(
-      "🔑 Backend token từ SharedPreferences: ${backendToken != null && backendToken.isNotEmpty ? 'CÓ' : 'KHÔNG'}",
-    );
-
-    if (backendToken != null && backendToken.isNotEmpty) {
-      return backendToken;
+  // Usage: if (await ApiService.hasInternet()) { ... }
+  static Future<bool> hasInternet() async {
+    try {
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(seconds: 5));
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
     }
-
-    print("❌ Không tìm thấy backend token");
-    return null;
   }
 
+  // GET HEADERS - Get HTTP headers with auth token
+
+  // Usage: final headers = await ApiService.getHeaders();
   static Future<Map<String, String>> getHeaders() async {
     final token = await _getToken();
-    if (token == null) {
-      print("⚠️ CẢNH BÁO: Không tìm thấy token nào!");
-    }
     return {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
   }
 
-  // ==== API 1-5: PUBLIC APIs (GET) 
-  // API #1: Tours - GET /tours
-  // SỬ DỤNG TẠI: home_screen.dart (line 46)
-  static Future<List<dynamic>> getTours() async => _getList('/tours');
-  // API #2: Fellows - GET /fellows
-  static Future<List<dynamic>> getFellows() async => _getList('/fellows');
-  // API #3: Places - GET /places
-  static Future<List<dynamic>> getPlaces() async => _getList('/places');
-  // API #4: Blogs - GET /blogs
-  // SỬ DỤNG TẠI: home_screen.dart (line 49)
-  static Future<List<dynamic>> getBlogs() async => _getList('/blogs');
-  // API #5: Experiences - GET /experiences
-  // SỬ DỤNG TẠI: home_screen.dart (line 50)
-  static Future<List<dynamic>> getExperiences() async =>
-      _getList('/experiences');
+  // TOKEN - Get stored authentication token (private)
+  // Usage: Internal - called by getHeaders()
+  static Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final backendToken = prefs.getString('backend_token');
+    debugPrint("🔑 Token: ${backendToken != null && backendToken.isNotEmpty ? 'CÓ' : 'KHÔNG'}");
+    return backendToken;
+  }
 
-  static Future<List<dynamic>> _getList(String endpoint) async {
-    try {
-      final response = await http.get(Uri.parse('$baseUrl$endpoint'));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['data'] ?? [];
+  // HTTP CLIENT WITH TIMEOUT
+  static http.Client get _client => http.Client();
+
+  // HELPER: _getList - GET request returning List
+
+  // Usage: Internal - called by public API methods
+  static Future<List<dynamic>> _getList(
+    String endpoint, {
+    int retries = _maxRetries,
+    bool requireAuth = false,
+  }) async {
+    // Retry loop
+    for (int attempt = 0; attempt < retries; attempt++) {
+      try {
+        final headers = requireAuth ? await getHeaders() : null;
+        final response = await _client
+            .get(
+              Uri.parse('$baseUrl$endpoint'),
+              headers: headers,
+            )
+            .timeout(_timeout);
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          return data['data'] ?? [];
+        } else {
+          debugPrint("❌ $endpoint: ${response.statusCode}");
+        }
+      } on SocketException catch (e) {
+        debugPrint("❌ SocketException: $e");
+        if (attempt == retries - 1) {
+          throw NetworkException('Lỗi kết nối mạng');
+        }
+      } on TimeoutException catch (e) {
+        debugPrint("❌ Timeout: $e");
+        if (attempt == retries - 1) {
+          throw TimeoutException('Yêu cầu bị quá thời gian. Thử lại sau!');
+        }
+      } catch (_) {
+        if (attempt == retries - 1) {
+          throw ApiException('Lỗi không xác định', endpoint: endpoint);
+        }
       }
-    } catch (e) {
-      print('Error fetching $endpoint: $e');
+      // Wait before retry
+      await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
     }
     return [];
   }
 
-  // ==== API 6: TRIPS - GET/POST/PUT/DELETE 
-  // 
-  // API #6a: Get All Trips - GET /trips (authenticated)
-  // SỬ DỤNG TẠI: my_trips_app.dart (line 71), profile_screen.dart (line 57)
-  static Future<List<dynamic>> getTrips() async {
-    try {
-      final headers = await getHeaders();
+  static Future<Map<String, dynamic>?> _getAuthenticatedItem(
+    String endpoint, {
+    int retries = _maxRetries,
+  }) async {
+    for (int attempt = 0; attempt < retries; attempt++) {
+      try {
+        final headers = await getHeaders();
+        debugPrint("📤 Headers: $headers");
+        final response = await _client
+            .get(Uri.parse('$baseUrl$endpoint'), headers: headers)
+            .timeout(_timeout);
 
-      final response = await http.get(
-        Uri.parse('$baseUrl/trips'),
-        headers: headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final trips = data['data'] ?? [];
-        return trips;
-      } else {
-        print("❌ Lỗi ${response.statusCode}: ${response.body}");
-        return [];
+        debugPrint("📥 $endpoint: ${response.statusCode}");
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          return data['data'];
+        } else {
+          debugPrint("❌ $endpoint: ${response.statusCode}");
+        }
+      } on SocketException {
+        if (attempt == retries - 1) {
+          throw NetworkException('Lỗi kết nối mạng');
+        }
+      } on TimeoutException {
+        if (attempt == retries - 1) {
+          throw TimeoutException('Quá thời gian chờ!');
+        }
+      } catch (_) {
+        if (attempt == retries - 1) {
+          throw ApiException('Lỗi không xác định', endpoint: endpoint);
+        }
       }
-    } catch (e) {
-      print("❌ Exception khi gọi getTrips: $e");
-      return [];
+      await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
     }
+    return null;
   }
 
-  // API #6b: Get Trip Detail - GET /trips/:id (authenticated)
-  // SỬ DỤNG TẠI: trip_info_screen.dart (thêm vào)
-  static Future<Map<String, dynamic>?> getTrip(String id) async {
+  static Future<Map<String, dynamic>?> _putAuthenticated(
+    String endpoint,
+    Map<String, dynamic> data, {
+    int retries = _maxRetries,
+  }) async {
+    for (int attempt = 0; attempt < retries; attempt++) {
+      try {
+        final headers = await getHeaders();
+        final response = await _client
+            .put(
+              Uri.parse('$baseUrl$endpoint'),
+              headers: headers,
+              body: json.encode(data),
+            )
+            .timeout(_timeout);
+
+        if (response.statusCode == 200) {
+          final result = json.decode(response.body);
+          return result['data'];
+        } else {
+          debugPrint("❌ PUT $endpoint: ${response.statusCode}");
+        }
+      } catch (_) {
+        if (attempt == retries - 1) {
+          throw ApiException('Lỗi cập nhật', endpoint: endpoint);
+        }
+      }
+      await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+    }
+    return null;
+  }
+
+  static Future<bool> _deleteAuthenticated(
+    String endpoint, {
+    int retries = _maxRetries,
+  }) async {
+    for (int attempt = 0; attempt < retries; attempt++) {
+      try {
+        final headers = await getHeaders();
+        final response = await _client
+            .delete(Uri.parse('$baseUrl$endpoint'), headers: headers)
+            .timeout(_timeout);
+        return response.statusCode == 200 || response.statusCode == 204;
+      } catch (_) {
+        if (attempt == retries - 1) {
+          debugPrint("❌ Delete error");
+        }
+      }
+      await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+    }
+    return false;
+  }
+
+  // PUBLIC APIs - GET public data (no auth required)
+
+  // Usage: final tours = await ApiService.getTours();
+  static Future<List<dynamic>> getTours() => _getList('/tours');
+  static Future<List<dynamic>> getFellows() => _getList('/fellows');
+  static Future<List<dynamic>> getPlaces() => _getList('/places');
+  static Future<List<dynamic>> getBlogs() => _getList('/blogs');
+  static Future<List<dynamic>> getExperiences() => _getList('/experiences');
+
+  // 
+  // TRIPS API - Trip CRUD operations (auth required)
+  // 
+  // Usage: final trips = await ApiService.getTrips();
+  static Future<List<dynamic>> getTrips() async {
+    return _getList('/trips', requireAuth: true);
+  }
+
+  // Usage: final trip = await ApiService.getTrip('trip_id');
+  static Future<Map<String, dynamic>?> getTrip(String id) {
     return _getAuthenticatedItem('/trips/$id');
   }
 
-  // ==== SUPABASE STORAGE - IMAGE UPLOAD 
-  // 
-  // AUTH #3: Supabase Auth (Supabase.instance.client.auth.currentUser)
-  // IMAGE UPLOAD (Supabase Storage)
-  // SỬ DỤNG TẠI: create_trip_page.dart (line 91)
-  static Future<String?> uploadTripImage(
-    Uint8List fileBytes,
-    String fileName,
-  ) async {
-    try {
-      // AUTH #3: Kiểm tra user đã đăng nhập chưa
-      final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
-      if (user == null) {
-        print('❌ User chưa đăng nhập, không thể upload ảnh trip');
-        return null;
-      }
-      final userId = user.id;
-      final path = 'trips/$userId/$fileName';
+  // CREATE TRIP - Create new trip (auth required)
 
-      await supabase.storage
-          .from('trip_images')
-          .uploadBinary(
-            path,
-            fileBytes,
-            fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-          );
-
-      final publicUrl = supabase.storage.from('trip_images').getPublicUrl(path);
-      print('✅ Uploaded image to: $publicUrl');
-      return publicUrl;
-    } catch (e) {
-      print('❌ Image upload error: $e');
-      return null;
-    }
-  }
-
-  // API #6c: Create Trip - POST /trips (authenticated)
-  // SỬ DỤNG TẠI: create_trip_page.dart (line 103), trip_info_screen.dart (line 31)
+  // Usage: final trip = await ApiService.createTrip(title: '...', destination: '...', ...);
   static Future<Map<String, dynamic>?> createTrip({
     required String title,
     required String destination,
@@ -201,71 +291,74 @@ class ApiService {
         'imageUrl': imageUrl,
       });
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/trips'),
-        headers: headers,
-        body: body,
-      );
+      final response = await _client
+          .post(Uri.parse('$baseUrl/trips'), headers: headers, body: body)
+          .timeout(_timeout);
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
         return data['data'];
       }
+      throw ApiException('Tạo trip thất bại', statusCode: response.statusCode);
     } catch (e) {
-      print('Error creating trip: $e');
+      if (e is ApiException || e is NetworkException) rethrow;
+      throw ApiException('Lỗi tạo trip');
     }
-    return null;
   }
 
-  // API #6d: Update Trip - PUT /trips/:id (authenticated)
-  // SỬ DỤNG TẠI: edit_trip_page.dart (chưa có thì thêm vào)
+  // UPDATE TRIP - Update existing trip (auth required)
+
+  // Usage: final trip = await ApiService.updateTrip('trip_id', {...});
   static Future<Map<String, dynamic>?> updateTrip(
     String id,
     Map<String, dynamic> data,
-  ) async {
+  ) {
     return _putAuthenticated('/trips/$id', data);
   }
 
-  // API #6e: Delete Trip - DELETE /trips/:id (authenticated)
-  // SỬ DỤNG TẠI: my_trips_app.dart (thêm nút xóa trip)
-  static Future<bool> deleteTrip(String id) async {
+  // Usage: await ApiService.deleteTrip('trip_id');
+  static Future<bool> deleteTrip(String id) {
     return _deleteAuthenticated('/trips/$id');
   }
 
-  // ==== API 7: USER PROFILE - GET/PUT 
-  // 
-  // API #7a: Get User Profile - GET /users/profile (authenticated)
-  // SỬ DỤNG TẠI: profile_screen.dart (line 35), settings_screen.dart (line 30), edit_profile_screen.dart (line 31)
-  /// Lấy thông tin profile user hiện tại
-  static Future<Map<String, dynamic>?> getUserProfile() async {
+  // USER PROFILE - User profile operations (auth required)
+
+  // Usage: final profile = await ApiService.getUserProfile();
+  static Future<Map<String, dynamic>?> getUserProfile() {
     return _getAuthenticatedItem('/users/profile');
   }
 
-  // ==== API 8: PHOTOS - GET/POST/DELETE
-  // 
-  // API #8a: Get User Photos - GET /photos (authenticated)
-  // SỬ DỤNG TẠI: my_photos_screen.dart (line 26)
-  /// Lấy danh sách photos từ Supabase Storage
+  // Usage: await ApiService.updateUserProfile({...});
+  static Future<Map<String, dynamic>?> updateUserProfile(
+    Map<String, dynamic> data,
+  ) {
+    return _putAuthenticated('/users/profile', data);
+  }
+
+  // Usage: final user = await ApiService.getMe();
+  static Future<Map<String, dynamic>?> getMe() {
+    return _getAuthenticatedItem('/auth/me');
+  }
+
+  // PHOTOS - Supabase storage photo operations (auth required)
+
+  // Usage: final photos = await ApiService.getUserPhotos();
   static Future<List<dynamic>> getUserPhotos() async {
     try {
-      // Lấy user hiện tại
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) {
-        print('❌ User chưa đăng nhập');
-        return [];
+        throw ApiException('User chưa đăng nhập');
       }
 
-      // Lấy danh sách file từ Supabase Storage
       final response = await Supabase.instance.client.storage
           .from('user_photos')
-          .list(path: 'photos/${user.id}');
+          .list(path: 'photos/${user.id}')
+          .timeout(_timeout);
 
-      if (response == null || response.isEmpty) {
-        print('ℹ️ Không có photo nào');
+      if (response.isEmpty) {
         return [];
       }
 
-      // Chuyển đổi thành list map
       final photos = <dynamic>[];
       for (final file in response) {
         final url = Supabase.instance.client.storage
@@ -277,383 +370,193 @@ class ApiService {
           'fileName': file.name,
         });
       }
-
-      print('✅ Lấy ${photos.length} photos từ Supabase');
       return photos;
     } catch (e) {
-      print('❌ Lỗi khi lấy photos: $e');
-      return [];
+      if (e is ApiException) rethrow;
+      throw ApiException('Lỗi lấy photos');
     }
   }
 
-  // API #8b: Upload Photo - POST /photos (authenticated + Supabase Storage)
-  // SỬ DỤNG TẠI: my_photos_screen.dart (line 51)
-  /// Upload photo
+  // UPLOAD PHOTO - Upload photo to Supabase (auth required)
+
+  // Usage: final photo = await ApiService.uploadPhoto(bytes, 'filename.jpg', 'desc');
   static Future<Map<String, dynamic>?> uploadPhoto(
     Uint8List fileBytes,
     String fileName,
     String? description,
   ) async {
     try {
-      // AUTH #3: Kiểm tra user đã đăng nhập chưa
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
       if (user == null) {
-        print('❌ User chưa đăng nhập, không thể upload ảnh');
-        return null;
+        throw ApiException('User chưa đăng nhập');
       }
       final userId = user.id;
+      final path = 'photos/$userId/$fileName';
 
-      // Thử upload lên Supabase storage trước
-      try {
-        var finalFileName = fileName;
-        var path = 'photos/$userId/$finalFileName';
+      await supabase.storage
+          .from('user_photos')
+          .uploadBinary(path, fileBytes)
+          .timeout(_timeout);
 
-        // Kiểm tra xem file đã tồn tại chưa
-        try {
-          await supabase.storage.from('user_photos').list(path: 'photos/$userId');
-        } catch (_) {
-          // Ignore - sẽ kiểm tra khi upload
-        }
+      final publicUrl = supabase.storage.from('user_photos').getPublicUrl(path);
 
-        // Thử upload - nếu lỗi duplicate thì đổi tên
-        try {
-          await supabase.storage
-              .from('user_photos')
-              .uploadBinary(
-                path,
-                fileBytes,
-                fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-              );
-        } on StorageException catch (e) {
-          if (e.statusCode == 409 || e.message.contains('already exists')) {
-            // File đã tồn tại - thêm timestamp vào tên
-            final timestamp = DateTime.now().millisecondsSinceEpoch;
-            final ext = fileName.contains('.') ? fileName.split('.').last : '';
-            final nameWithoutExt = ext.isNotEmpty ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
-            finalFileName = ext.isNotEmpty ? '$nameWithoutExt\_$timestamp.$ext' : '${nameWithoutExt}_$timestamp';
-            path = 'photos/$userId/$finalFileName';
-            
-            // Upload lại với tên mới
-            await supabase.storage
-                .from('user_photos')
-                .uploadBinary(
-                  path,
-                  fileBytes,
-                  fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-                );
-            print('ℹ️ File đã tồn tại, đổi tên thành: $finalFileName');
-          } else {
-            rethrow;
-          }
-        }
-
-        final publicUrl = supabase.storage.from('user_photos').getPublicUrl(path);
-        
-        // Thử lưu thông tin photo vào backend
-        try {
-          final headers = await getHeaders();
-          final response = await http.post(
-            Uri.parse('$baseUrl/photos'),
-            headers: headers,
-            body: json.encode({
-              'url': publicUrl,
-              'description': description,
-              'fileName': fileName,
-            }),
-          );
-
-          if (response.statusCode == 201) {
-            final data = json.decode(response.body);
-            return data['data'];
-          } else if (response.statusCode == 404) {
-            // API không tồn tại, vẫn trả về thành công với URL
-            print("ℹ️ Photos API không tồn tại, upload thành công tới storage");
-            return {
-              'id': DateTime.now().millisecondsSinceEpoch.toString(),
-              'url': publicUrl,
-              'description': description,
-              'fileName': fileName,
-            };
-          }
-          print("❌ uploadPhoto backend ${response.statusCode}: ${response.body}");
-        } catch (e) {
-          print("❌ Lỗi khi gọi backend API: $e");
-          // Vẫn trả về thành công nếu upload storage thành công
-          return {
-            'id': DateTime.now().millisecondsSinceEpoch.toString(),
-            'url': publicUrl,
-            'description': description,
-            'fileName': fileName,
-          };
-        }
-      } catch (e) {
-        print("❌ Lỗi Supabase storage: $e");
-        // Nếu storage bucket không tồn tại, tạo URL giả
-        final fakeUrl = 'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/400/400.jpg';
-        return {
-          'id': DateTime.now().millisecondsSinceEpoch.toString(),
-          'url': fakeUrl,
-          'description': description,
-          'fileName': fileName,
-        };
-      }
+      return {
+        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        'url': publicUrl,
+        'description': description,
+        'fileName': fileName,
+      };
     } catch (e) {
-      print('❌ Error uploadPhoto: $e');
-      return null;
+      if (e is ApiException) rethrow;
+      throw ApiException('Lỗi upload photo');
     }
   }
 
-  // API #8c: Delete Photo - DELETE /photos/:id (authenticated)
-  // SỬ DỤNG TẠI: my_photos_screen.dart (line 84)
-  /// Xóa photo từ cả Supabase Storage và Backend API
+  // DELETE PHOTO - Delete photo from Supabase (auth required)
+
+  // Usage: await ApiService.deletePhoto('photo_url');
   static Future<bool> deletePhoto(String photoUrl) async {
     try {
-      // Lấy user hiện tại
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) {
-        print('❌ User chưa đăng nhập');
-        return false;
+        throw ApiException('User chưa đăng nhập');
       }
 
-      // Trích xuất tên file từ URL
       final uri = Uri.parse(photoUrl);
       final pathSegments = uri.pathSegments;
-      if (pathSegments.isEmpty) {
-        print('❌ Không lấy được path từ URL');
-        return false;
-      }
-      // Lấy phần tử cuối cùng, bỏ query params
+      if (pathSegments.isEmpty) return false;
+
       var fileName = pathSegments.last;
       if (fileName.contains('?')) {
         fileName = fileName.split('?').first;
       }
-      print('🔍 Xóa file: $fileName');
 
-      // ✅ Xóa từ Supabase Storage
       await Supabase.instance.client.storage
           .from('user_photos')
-          .remove(['photos/${user.id}/$fileName']);
-      print('✅ Xóa khỏi Supabase Storage');
+          .remove(['photos/${user.id}/$fileName'])
+          .timeout(_timeout);
 
       return true;
-    } catch (e) {
-      print("❌ Lỗi khi xóa photo: $e");
+    } catch (_) {
+      debugPrint("❌ Delete photo error");
       return false;
     }
   }
-    // API #7c: Get Current User - GET /auth/me (authenticated)
-  // SỬ DỤNG TẠI: auth_provider.dart (lấy thông tin user sau khi login)
-  /// Lấy thông tin user hiện tại từ auth/me
-  static Future<Map<String, dynamic>?> getMe() async {
-    return _getAuthenticatedItem('/auth/me');
-  }
 
-  // API #7b: Update User Profile - PUT /users/profile (authenticated)
-  // SỬ DỤNG TẠI: edit_profile_screen.dart (line 316)
-  /// Cập nhật thông tin profile user
-  static Future<Map<String, dynamic>?> updateUserProfile(
-    Map<String, dynamic> data,
-  ) async {
-    try {
-      print("🔄 Đang gọi MongoDB API: PUT /users/profile");
-      final result = await _putAuthenticated('/users/profile', data);
-      
-      if (result != null) {
-        print("✅ MongoDB API cập nhật thành công");
-        return result;
-      } else {
-        print("❌ MongoDB API trả về null");
-        return null;
-      }
-    } catch (e) {
-      print('❌ Lỗi khi cập nhật profile MongoDB: $e');
-      return null;
-    }
-  }
+  // CHAT APIs - Chat/messaging operations (auth required)
 
-  // ==== API 9-10: CHAT APIs
-  // 
-  // API #9a: Get Conversations - GET /chat/conversations (authenticated)
-  // SỬ DỤNG TẠI: ChatHomePage.dart (line 26)
-  /// Lấy danh sách cuộc trò chuyện
+  // Usage: final conversations = await ApiService.getConversations();
   static Future<List<dynamic>> getConversations() async {
-    try {
-      final headers = await getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/chat/conversations'),
-        headers: headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['data'] ?? [];
-      }
-      print("❌ getConversations ${response.statusCode}: ${response.body}");
-      return [];
-    } catch (e) {
-      print('❌ Error getConversations: $e');
-      return [];
-    }
+    return _getList('/chat/conversations', requireAuth: true);
   }
 
-  // API #9b: Get Messages - GET /chat/conversations/:id/messages (authenticated)
-  // SỬ DỤNG TẠI: ChatHomePage.dart (line 314)
-  /// Lấy tin nhắn của một cuộc trò chuyện
+  // Usage: final messages = await ApiService.getMessages('conversation_id');
   static Future<List<dynamic>> getMessages(String conversationId) async {
-    try {
-      final headers = await getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/chat/conversations/$conversationId/messages'),
-        headers: headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['data'] ?? [];
-      }
-      print("❌ getMessages ${response.statusCode}: ${response.body}");
-      return [];
-    } catch (e) {
-      print('❌ Error getMessages: $e');
-      return [];
-    }
+    return _getList(
+      '/chat/conversations/$conversationId/messages',
+      requireAuth: true,
+    );
   }
 
-  // API #9c: Send Message - POST /chat/messages (authenticated)
-  // SỬ DỤNG TẠI: ChatHomePage.dart (line 342)
-  /// Gửi tin nhắn
+  // SEND MESSAGE - Send chat message (auth required)
+
+  // Usage: final message = await ApiService.sendMessage('conversation_id', 'Hello!');
   static Future<Map<String, dynamic>?> sendMessage(
     String conversationId,
     String content,
   ) async {
     try {
       final headers = await getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/chat/messages'),
-        headers: headers,
-        body: json.encode({
-          'conversationId': conversationId,
-          'content': content,
-          'type': 'text',
-        }),
-      );
+      final response = await _client
+          .post(
+            Uri.parse('$baseUrl/chat/messages'),
+            headers: headers,
+            body: json.encode({
+              'conversationId': conversationId,
+              'content': content,
+              'type': 'text',
+            }),
+          )
+          .timeout(_timeout);
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
         return data['data'];
       }
-      print("❌ sendMessage ${response.statusCode}: ${response.body}");
-      return null;
+      throw ApiException('Gửi tin nhắn thất bại', statusCode: response.statusCode);
     } catch (e) {
-      print('❌ Error sendMessage: $e');
-      return null;
+      if (e is ApiException || e is NetworkException) rethrow;
+      throw ApiException('Lỗi gửi tin nhắn');
     }
   }
 
-  // API #9d: Create Conversation - POST /chat/conversations (authenticated)
-  // SỬ DỤNG TẠI: ChatHomePage.dart (line 564)
-  /// Tạo cuộc trò chuyện mới
+  // CREATE CONVERSATION - Create new chat (auth required)
+
+  // Usage: final conv = await ApiService.createConversation('user_id');
   static Future<Map<String, dynamic>?> createConversation(
     String participantId,
   ) async {
     try {
       final headers = await getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/chat/conversations'),
-        headers: headers,
-        body: json.encode({'participantId': participantId}),
-      );
+      final response = await _client
+          .post(
+            Uri.parse('$baseUrl/chat/conversations'),
+            headers: headers,
+            body: json.encode({'participantId': participantId}),
+          )
+          .timeout(_timeout);
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
         return data['data'];
       }
-      print("❌ createConversation ${response.statusCode}: ${response.body}");
-      return null;
+      throw ApiException('Tạo cuộc trò chuyện thất bại',
+          statusCode: response.statusCode);
     } catch (e) {
-      print('❌ Error createConversation: $e');
-      return null;
+      if (e is ApiException || e is NetworkException) rethrow;
+      throw ApiException('Lỗi tạo cuộc trò chuyện');
     }
   }
 
-  // API #9e: Search Chat Users - GET /chat/users (authenticated)
-  // SỬ DỤNG TẠI: ChatHomePage.dart (line 539)
-  /// Tìm kiếm user để chat
+  // 
+  // SEARCH CHAT USERS - Search users for chat (auth required)
+  // 
+  // Usage: final users = await ApiService.searchChatUsers('john');
   static Future<List<dynamic>> searchChatUsers(String query) async {
-    try {
-      final headers = await getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/chat/users?q=${Uri.encodeComponent(query)}'),
-        headers: headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['data'] ?? [];
-      }
-      print("❌ searchChatUsers ${response.statusCode}: ${response.body}");
-      return [];
-    } catch (e) {
-      print('❌ Error searchChatUsers: $e');
-      return [];
-    }
+    return _getList(
+      '/chat/users?q=${Uri.encodeComponent(query)}',
+      requireAuth: true,
+    );
   }
 
-  // PRIVATE HELPERS 
-  static Future<Map<String, dynamic>?> _getAuthenticatedItem(
-    String endpoint,
-  ) async {
+  // 
+  // UPLOAD TRIP IMAGE - Upload trip image to Supabase (auth required)
+  // 
+  // Usage: final url = await ApiService.uploadTripImage(bytes, 'trip.jpg');
+  static Future<String?> uploadTripImage(Uint8List fileBytes, String fileName) async {
     try {
-      final headers = await getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['data'];
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        throw ApiException('User chưa đăng nhập');
       }
-    } catch (e) {
-      print('Error fetching $endpoint: $e');
-    }
-    return null;
-  }
+      final userId = user.id;
+      final path = 'trips/$userId/$fileName';
 
-  static Future<Map<String, dynamic>?> _putAuthenticated(
-    String endpoint,
-    Map<String, dynamic> data,
-  ) async {
-    try {
-      final headers = await getHeaders();
-      final response = await http.put(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers,
-        body: json.encode(data),
-      );
+      await supabase.storage
+          .from('trip_images')
+          .uploadBinary(path, fileBytes)
+          .timeout(_timeout);
 
-      if (response.statusCode == 200) {
-        final result = json.decode(response.body);
-        return result['data'];
-      }
-    } catch (e) {
-      print('Error updating $endpoint: $e');
+      return supabase.storage.from('trip_images').getPublicUrl(path);
+    } catch (_) {
+      debugPrint("❌ Upload image error");
+      return null;
     }
-    return null;
-  }
-
-  static Future<bool> _deleteAuthenticated(String endpoint) async {
-    try {
-      final headers = await getHeaders();
-      final response = await http.delete(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers,
-      );
-      return response.statusCode == 200 || response.statusCode == 204;
-    } catch (e) {
-      print('Error deleting $endpoint: $e');
-    }
-    return false;
   }
 }
+
+// ====
+// END OF API SERVICE
+// ====

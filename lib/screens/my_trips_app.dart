@@ -4,7 +4,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'create_trip_page.dart';
-import '../services/api_service.dart';
+import '../models/trip.dart';
+import '../repositories/trip_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +41,7 @@ class MyTripsScreen extends StatefulWidget {
 class _MyTripsScreenState extends State<MyTripsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<dynamic> _trips = [];
+  List<Trip> _trips = [];
   List<dynamic> _wishlistItems = [];
   Set<String> _wishlistIds = {};
   bool _isLoading = true;
@@ -68,18 +69,51 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     });
 
     try {
-      final trips = await ApiService.getTrips();
+      final tripRepo = TripRepository();
+      final trips = await tripRepo.getTrips();
 
-      setState(() {
-        _trips = trips;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _trips = trips;
+          _isLoading = false;
+        });
+      }
+    } on TripException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.message;
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Thử lại',
+              textColor: Colors.white,
+              onPressed: _loadTrips,
+            ),
+          ),
+        );
+      }
     } catch (e) {
-      setState(() {
-        _errorMessage = "Không thể tải dữ liệu. Vui lòng thử lại sau.";
-        _isLoading = false;
-      });
-      print("Lỗi load trips: $e");
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Không thể tải dữ liệu. Vui lòng thử lại sau.";
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã xảy ra lỗi. Vui lòng thử lại!'),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Thử lại',
+              textColor: Colors.white,
+              onPressed: _loadTrips,
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -91,7 +125,9 @@ class _MyTripsScreenState extends State<MyTripsScreen>
 
       setState(() {
         _wishlistItems = wishlist;
-        _wishlistIds = {for (var item in wishlist) item['_id'] ?? ''};
+        _wishlistIds = {
+          for (final item in wishlist) _wishlistItemId(item),
+        }.where((id) => id.isNotEmpty).toSet();
       });
 
       print("✅ Loaded ${_wishlistItems.length} wishlist items");
@@ -110,6 +146,17 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     super.dispose();
   }
 
+  String _effectiveTripStatus(Trip trip) => trip.status ?? 'waiting';
+
+  String _wishlistItemId(dynamic item) {
+    if (item is Trip) {
+      return item.id ?? '';
+    } else if (item is Map) {
+      return item['_id']?.toString() ?? item['id']?.toString() ?? '';
+    }
+    return '';
+  }
+
   Future<void> _refreshWishlist() async {
     await _loadWishlist();
   }
@@ -121,15 +168,24 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     final wishlistJson = prefs.getString('wishlist_items') ?? '[]';
     final List<dynamic> wishlist = json.decode(wishlistJson);
 
+    final Map<String, dynamic> stored;
+    if (tripData is Trip) {
+      stored = tripData.toWishlistMap();
+    } else if (tripData is Map) {
+      stored = Map<String, dynamic>.from(tripData);
+    } else {
+      return;
+    }
+
     setState(() {
       if (_wishlistIds.contains(tripId)) {
         _wishlistIds.remove(tripId);
-        _wishlistItems.removeWhere((item) => item['_id'] == tripId);
-        wishlist.removeWhere((item) => item['_id'] == tripId);
+        _wishlistItems.removeWhere((item) => _wishlistItemId(item) == tripId);
+        wishlist.removeWhere((item) => _wishlistItemId(item) == tripId);
       } else {
         _wishlistIds.add(tripId);
-        _wishlistItems.add(tripData);
-        wishlist.add(tripData);
+        _wishlistItems.add(stored);
+        wishlist.add(stored);
       }
     });
 
@@ -305,7 +361,7 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     if (_errorMessage != null) return _buildErrorState();
 
     final currentTrips =
-        _trips.where((trip) => trip['status'] == 'confirmed').toList();
+        _trips.where((trip) => _effectiveTripStatus(trip) == 'confirmed').toList();
 
     if (currentTrips.isEmpty) {
       return _buildEmptyState('No current trips');
@@ -326,7 +382,7 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     if (_errorMessage != null) return _buildErrorState();
 
     final nextTrips =
-        _trips.where((trip) => trip['status'] == 'waiting').toList();
+        _trips.where((trip) => _effectiveTripStatus(trip) == 'waiting').toList();
 
     if (nextTrips.isEmpty) return _buildEmptyState('No upcoming trips');
 
@@ -347,9 +403,10 @@ class _MyTripsScreenState extends State<MyTripsScreen>
     final pastTrips =
         _trips
             .where(
-              (trip) =>
-                  trip['status'] == 'completed' ||
-                  trip['status'] == 'cancelled',
+              (trip) {
+                final s = _effectiveTripStatus(trip);
+                return s == 'completed' || s == 'cancelled';
+              },
             )
             .toList();
 
@@ -417,25 +474,54 @@ class _MyTripsScreenState extends State<MyTripsScreen>
 
   //  TRIP CARD
   Widget _buildTripCard(dynamic trip) {
-    final String id = trip['_id'] ?? trip['id'] ?? '';
-    final String title = trip['title'] ?? 'Untitled Trip';
-    final String location = trip['destination'] ?? '';
-    final String date = _formatDate(trip['startDate']);
-    final String? time =
-        (trip['startTime'] != null && trip['endTime'] != null)
-            ? '${trip['startTime']} - ${trip['endTime']}'
-            : null;
-    final String host = trip['host']?['name'] ?? 'Waiting for guide';
-    final String imageUrl = trip['thumbnail'] ?? trip['imageUrl'] ?? '';
-    final String status = trip['status'] ?? '';
+    final String id;
+    final String title;
+    final String location;
+    final String date;
+    final String? time;
+    final String host;
+    final String imageUrl;
+    final String status;
+
+    if (trip is Trip) {
+      id = trip.id ?? '';
+      title = trip.title;
+      location = trip.destination;
+      date = _formatDate(trip.startDate);
+      time =
+          (trip.startTime != null && trip.endTime != null)
+              ? '${trip.startTime} - ${trip.endTime}'
+              : null;
+      host = trip.hostName ?? 'Waiting for guide';
+      imageUrl = trip.imageUrl ?? '';
+      status = trip.status ?? '';
+    } else if (trip is Map) {
+      final m = Map<String, dynamic>.from(trip);
+      id = m['_id']?.toString() ?? m['id']?.toString() ?? '';
+      title = m['title'] as String? ?? 'Untitled Trip';
+      location = m['destination'] as String? ?? '';
+      date = _formatDate(m['startDate']);
+      time =
+          (m['startTime'] != null && m['endTime'] != null)
+              ? '${m['startTime']} - ${m['endTime']}'
+              : null;
+      final dynamic hostRaw = m['host'];
+      host =
+          hostRaw is Map && hostRaw['name'] != null
+              ? hostRaw['name'] as String
+              : 'Waiting for guide';
+      imageUrl = m['thumbnail'] as String? ?? m['imageUrl'] as String? ?? '';
+      status = m['status'] as String? ?? '';
+    } else {
+      return const SizedBox.shrink();
+    }
+
     final bool isFavorite = _wishlistIds.contains(id);
 
     String displayStatus = '';
-    bool isCurrent = false;
 
     if (status == 'confirmed') {
       displayStatus = 'In Progress';
-      isCurrent = true;
     } else if (status == 'waiting') {
       displayStatus = 'Waiting';
     } else if (status == 'completed') {
@@ -646,6 +732,9 @@ class _MyTripsScreenState extends State<MyTripsScreen>
 
   String _formatDate(dynamic dateStr) {
     if (dateStr == null) return '';
+    if (dateStr is DateTime) {
+      return '${dateStr.month}/${dateStr.day}/${dateStr.year}';
+    }
     try {
       final date = DateTime.parse(dateStr.toString());
       return '${date.month}/${date.day}/${date.year}';

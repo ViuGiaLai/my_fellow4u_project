@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/api_service.dart';
+import '../models/trip.dart';
+import '../repositories/user_repository.dart';
+import '../repositories/trip_repository.dart';
 import 'settings_screen.dart';
 import 'my_photos_screen.dart';
 
@@ -12,7 +14,7 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  List<dynamic> _trips = [];
+  List<Trip> _trips = [];
   bool _isLoading = true;
   String? _userName;
   String? _userEmail;
@@ -46,7 +48,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .from('user_photos')
           .list(path: 'photos/${user.id}');
 
-      if (response != null && response.isNotEmpty) {
+      if (response.isNotEmpty) {
         final urls = <String>[];
         for (final file in response) {
           final url = Supabase.instance.client.storage
@@ -68,15 +70,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   
   Future<void> _loadUserData() async {
     try {
-      final userProfile = await ApiService.getUserProfile();
+      final userRepo = UserRepository();
+      final userProfile = await userRepo.getUserProfile();
       if (userProfile != null) {
         setState(() {
-          _userName = userProfile['firstName'] != null && userProfile['lastName'] != null
-              ? '${userProfile['firstName']} ${userProfile['lastName']}'
-              : userProfile['email']?.split('@').first ?? 'User';
-          _userEmail = userProfile['email'] ?? '';
-          _avatarUrl = userProfile['avatarUrl'] ?? userProfile['avatar_url'];
+          _userName = userProfile.name ?? userProfile.email?.split('@').first ?? 'User';
+          _userEmail = userProfile.email ?? '';
+          _avatarUrl = userProfile.avatarUrl;
         });
+      }
+    } on UserException catch (e) {
+      // Hiển thị thông báo lỗi thân thiện
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
       }
     } catch (e) {
       print('Error loading user data: $e');
@@ -85,11 +93,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadTrips() async {
     setState(() => _isLoading = true);
-    final trips = await ApiService.getTrips();
-    setState(() {
-      _trips = trips;
-      _isLoading = false;
-    });
+    try {
+      final tripRepo = TripRepository();
+      final trips = await tripRepo.getTrips();
+      setState(() {
+        _trips = trips;
+        _isLoading = false;
+      });
+    } on TripException catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -129,8 +149,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             else
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (context, i) =>
-                      _buildJourneyCard(_trips[i] as Map<String, dynamic>),
+                  (context, i) => _buildJourneyCard(_trips[i]),
                   childCount: _trips.length,
                 ),
               ),
@@ -367,24 +386,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 
   // JOURNEY CARD
   // 
-  Widget _buildJourneyCard(Map<String, dynamic> trip) {
-    final title = trip['title'] as String? ?? 'Untitled Journey';
-    final destination = trip['destination'] as String? ?? '';
-    final imageUrl =
-        (trip['imageUrl'] ?? trip['image_url']) as String?;
-    final likes = trip['likes'] ?? 234;
-    final startDate =
-        (trip['startDate'] ?? trip['start_date'] ?? '') as String;
+  Widget _buildJourneyCard(Trip trip) {
+    final title = trip.title.isEmpty ? 'Untitled Journey' : trip.title;
+    final destination = trip.destination;
+    final imageUrl = trip.imageUrl;
+    const likes = 234;
+    final dt = trip.startDate;
 
-    String formattedDate = '';
-    if (startDate.isNotEmpty) {
-      try {
-        final dt = DateTime.parse(startDate);
-        formattedDate = '${_monthName(dt.month)} ${dt.day}, ${dt.year}';
-      } catch (_) {
-        formattedDate = startDate;
-      }
-    }
+    final formattedDate =
+        '${_monthName(dt.month)} ${dt.day}, ${dt.year}';
 
     // Right-column fallback images
     const rightImg1 =

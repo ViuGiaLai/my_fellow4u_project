@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../models/conversation.dart';
+import '../repositories/chat_repository.dart';
 
 Color primary = const Color(0xff2ED1B2);
 
@@ -11,7 +12,7 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
-  List<dynamic> _conversations = [];
+  List<Conversation> _conversations = [];
   bool _isLoading = true;
   String _searchQuery = '';
 
@@ -23,22 +24,34 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _loadConversations() async {
     setState(() => _isLoading = true);
-    final conversations = await ApiService.getConversations();
-    setState(() {
-      _conversations = conversations;
-      _isLoading = false;
-    });
+    try {
+      final chatRepo = ChatRepository();
+      final conversations = await chatRepo.getConversations();
+      setState(() {
+        _conversations = conversations;
+        _isLoading = false;
+      });
+    } on ChatException catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
   }
 
-  List<dynamic> get _filteredConversations {
+  List<Conversation> get _filteredConversations {
     if (_searchQuery.isEmpty) return _conversations;
-    return _conversations.where((conv) {
-      final participant = conv['participant'] ?? {};
-      final name =
-          "${participant['firstName'] ?? ''} ${participant['lastName'] ?? ''}"
-              .toLowerCase();
-      return name.contains(_searchQuery.toLowerCase());
-    }).toList();
+    final q = _searchQuery.toLowerCase();
+    return _conversations
+        .where(
+          (conv) =>
+              (conv.participantName ?? '').toLowerCase().contains(q),
+        )
+        .toList();
   }
 
   @override
@@ -109,30 +122,28 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         itemCount: _filteredConversations.length,
                         itemBuilder: (context, index) {
                           final conv = _filteredConversations[index];
-                          final participant = conv['participant'] ?? {};
                           final name =
-                              "${participant['firstName'] ?? ''} ${participant['lastName'] ?? ''}"
-                                  .trim();
-                          final avatar = participant['avatar'] as String?;
-                          final lastMessage =
-                              conv['lastMessage'] as String? ?? '';
-                          final lastTime = conv['updatedAt'] as String?;
+                              (conv.participantName ?? '').trim();
+                          final avatar = conv.participantAvatarUrl;
+                          final lastMessage = conv.lastMessage ?? '';
+                          final lastTime = conv.lastMessageAt;
 
                           return _ChatItem(
                             name: name.isEmpty ? 'Unknown' : name,
                             message: lastMessage,
                             avatarUrl: avatar,
                             time: _formatTime(lastTime),
-                            conversationId: conv['_id'] as String? ?? '',
-                            participantId: participant['_id'] as String? ?? '',
+                            conversationId: conv.id ?? '',
+                            participantId: conv.participantId ?? '',
                             onTap: () async {
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => ChatDetailScreen(
-                                    conversationId: conv['_id'] as String? ?? '',
-                                    participantId: participant['_id'] as String? ?? '',
-                                    participantName: name.isEmpty ? 'Unknown' : name,
+                                    conversationId: conv.id ?? '',
+                                    participantId: conv.participantId ?? '',
+                                    participantName:
+                                        name.isEmpty ? 'Unknown' : name,
                                     participantAvatar: avatar,
                                   ),
                                 ),
@@ -204,18 +215,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  String _formatTime(String? iso) {
-    if (iso == null) return '';
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      final now = DateTime.now();
-      if (dt.day == now.day && dt.month == now.month && dt.year == now.year) {
-        return "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-      }
-      return "${dt.day}/${dt.month}";
-    } catch (_) {
-      return '';
+  String _formatTime(Object? value) {
+    if (value == null) return '';
+    DateTime? dt;
+    if (value is DateTime) {
+      dt = value.toLocal();
+    } else {
+      dt = DateTime.tryParse(value.toString())?.toLocal();
     }
+    if (dt == null) return '';
+    final now = DateTime.now();
+    if (dt.day == now.day && dt.month == now.month && dt.year == now.year) {
+      return "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+    }
+    return "${dt.day}/${dt.month}";
   }
 }
 
@@ -286,14 +299,11 @@ class ChatDetailScreen extends StatefulWidget {
 }
 
 class _ChatDetailScreenState extends State<ChatDetailScreen> {
-  List<dynamic> _messages = [];
+  List<Message> _messages = [];
   bool _isLoading = true;
   bool _isSending = false;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-
-  // ID của user hiện tại - lấy từ Supabase
-  String? _currentUserId;
 
   @override
   void initState() {
@@ -311,13 +321,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _loadMessages() async {
     setState(() => _isLoading = true);
 
-    final messages = await ApiService.getMessages(widget.conversationId);
+    try {
+      final chatRepo = ChatRepository();
+      final messages = await chatRepo.getMessages(widget.conversationId);
 
-    setState(() {
-      _messages = messages;
-      _isLoading = false;
-    });
-    _scrollToBottom();
+      setState(() {
+        _messages = messages;
+        _isLoading = false;
+      });
+      _scrollToBottom();
+    } on ChatException catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
   }
 
   void _scrollToBottom() {
@@ -339,7 +361,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     _messageController.clear();
     setState(() => _isSending = true);
 
-    final newMessage = await ApiService.sendMessage(
+    final chatRepo = ChatRepository();
+    final newMessage = await chatRepo.sendMessage(
       widget.conversationId,
       content,
     );
@@ -352,10 +375,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  bool _isMyMessage(Map<dynamic, dynamic> msg) {
-    final sender = msg['sender'] ?? {};
-    final senderId = sender['_id']?.toString() ?? sender['id']?.toString();
-    return senderId != widget.participantId;
+  bool _isMyMessage(Message msg) {
+    if (msg.isMe) return true;
+    final sid = msg.senderId;
+    if (sid == null) return false;
+    return sid != widget.participantId;
   }
 
   @override
@@ -399,7 +423,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       itemBuilder: (context, index) {
                         final msg = _messages[index];
                         return _MessageBubble(
-                          text: msg['content'] ?? '',
+                          text: msg.content,
                           isMe: _isMyMessage(msg),
                         );
                       },
@@ -536,7 +560,8 @@ class _AddFriendScreenState extends State<AddFriendScreen> {
 
   Future<void> _loadUsers([String query = '']) async {
     setState(() => _isLoading = true);
-    final users = await ApiService.searchChatUsers(query);
+    final chatRepo = ChatRepository();
+    final users = await chatRepo.searchChatUsers(query);
     setState(() {
       _users = users;
       for (final user in users) {
@@ -559,9 +584,10 @@ class _AddFriendScreenState extends State<AddFriendScreen> {
 
     setState(() => _isCreating = true);
 
-    final createdConversations = <Map<String, dynamic>>[];
+    final chatRepo = ChatRepository();
+    final createdConversations = <Conversation>[];
     for (final id in selectedIds) {
-      final conversation = await ApiService.createConversation(id);
+      final conversation = await chatRepo.createConversation(id);
       if (conversation != null) {
         createdConversations.add(conversation);
       }
@@ -571,22 +597,29 @@ class _AddFriendScreenState extends State<AddFriendScreen> {
 
     if (!mounted) return;
 
-    final singleParticipant = selectedIds.length == 1
-        ? _users.firstWhere(
-            (user) => user['_id'] == selectedIds.first,
-            orElse: () => null,
-          )
-        : null;
+    Map<String, dynamic>? singleParticipantMap;
+    if (selectedIds.length == 1) {
+      final sid = selectedIds.first;
+      for (final u in _users) {
+        if (u is Map && (u['_id']?.toString() ?? '') == sid) {
+          singleParticipantMap = Map<String, dynamic>.from(u);
+          break;
+        }
+      }
+    }
 
     final result = <String, dynamic>{'refresh': true};
 
-    if (singleParticipant != null && createdConversations.isNotEmpty) {
+    if (singleParticipantMap != null && createdConversations.isNotEmpty) {
       final createdConversation = createdConversations.first;
       result.addAll({
-        'conversationId': createdConversation['_id'] as String? ?? '',
-        'participantId': singleParticipant['_id'] as String? ?? '',
-        'participantName': "${singleParticipant['firstName'] ?? ''} ${singleParticipant['lastName'] ?? ''}".trim(),
-        'participantAvatar': singleParticipant['avatar'] as String? ?? '',
+        'conversationId': createdConversation.id ?? '',
+        'participantId': singleParticipantMap['_id']?.toString() ?? '',
+        'participantName':
+            "${singleParticipantMap['firstName'] ?? ''} ${singleParticipantMap['lastName'] ?? ''}"
+                .trim(),
+        'participantAvatar':
+            singleParticipantMap['avatar'] as String? ?? '',
       });
     }
 

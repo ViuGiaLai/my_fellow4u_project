@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../models/user.dart';
+import '../repositories/user_repository.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -27,15 +29,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _loadUserData() async {
     setState(() => _isLoading = true);
     try {
-      // Lấy dữ liệu từ MongoDB backend API
-      final userProfile = await ApiService.getUserProfile();
+      final userRepo = UserRepository();
+      final userProfile = await userRepo.getUserProfile();
       
       if (userProfile != null) {
         setState(() {
-          _firstNameController.text = userProfile['firstName'] ?? '';
-          _lastNameController.text = userProfile['lastName'] ?? '';
-          _email = userProfile['email'] ?? '';
-          _avatarUrl = userProfile['avatarUrl'] ?? userProfile['avatar_url'];
+          _firstNameController.text = userProfile.name?.split(' ').first ?? '';
+          _lastNameController.text = userProfile.name?.split(' ').last ?? '';
+          _email = userProfile.email ?? '';
+          _avatarUrl = userProfile.avatarUrl;
           _isLoading = false;
         });
         print("✅ Tải dữ liệu user thành công từ MongoDB");
@@ -312,8 +314,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       print("🔄 Đang cập nhật profile lên MongoDB...");
       
-      // Gọi API MongoDB để cập nhật profile
-      final result = await ApiService.updateUserProfile(updateData);
+      final userRepo = UserRepository();
+      final user = User(
+        name: '${_firstNameController.text} ${_lastNameController.text}',
+        avatarUrl: _avatarUrl,
+      );
+      final result = await userRepo.updateUserProfile(user);
 
       if (result != null) {
         print("✅ Cập nhật profile thành công lên MongoDB");

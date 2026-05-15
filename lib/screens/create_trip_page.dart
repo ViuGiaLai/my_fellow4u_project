@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
+import '../models/trip.dart';
+import '../repositories/trip_repository.dart';
 
 class CreateNewTripPage extends StatefulWidget {
   const CreateNewTripPage({super.key});
@@ -28,7 +30,7 @@ class _CreateNewTripPageState extends State<CreateNewTripPage> {
 
   bool _isLoading = false;
 
-  // ==================== CHỌN FILE (Hỗ trợ Web & Mobile) ====================
+  //  CHỌN FILE (Hỗ trợ Web & Mobile) 
   Future<void> _pickImage() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -100,7 +102,8 @@ class _CreateNewTripPageState extends State<CreateNewTripPage> {
         }
       }
 
-      final result = await ApiService.createTrip(
+      final tripRepo = TripRepository();
+      final trip = Trip(
         title: "Trip to ${_destinationController.text}",
         destination: _destinationController.text,
         startDate: _selectedDate ?? DateTime.now(),
@@ -113,6 +116,7 @@ class _CreateNewTripPageState extends State<CreateNewTripPage> {
             _languagesController.text.split(',').map((e) => e.trim()).toList(),
         imageUrl: imageUrl,
       );
+      final result = await tripRepo.createTrip(trip);
 
       if (result != null) {
         ScaffoldMessenger.of(context).showSnackBar(

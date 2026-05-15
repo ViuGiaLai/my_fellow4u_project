@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
+import '../models/trip.dart';
+import '../repositories/trip_repository.dart';
 
 class TripInfoScreen extends StatefulWidget {
   @override
@@ -28,7 +30,8 @@ class _TripInfoScreenState extends State<TripInfoScreen> {
   Future<void> _createTrip() async {
     if (selectedDate == null) return;
     
-    final success = await ApiService.createTrip(
+    final tripRepo = TripRepository();
+    final trip = Trip(
       title: "Trip to ${cityController.text}",
       destination: cityController.text,
       startDate: selectedDate!,
@@ -37,6 +40,7 @@ class _TripInfoScreenState extends State<TripInfoScreen> {
       endTime: toTime?.format(context),
       travelerCount: travelers,
     );
+    final success = await tripRepo.createTrip(trip);
 
     if (success != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Trip created successfully!")));
