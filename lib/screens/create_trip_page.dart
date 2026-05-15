@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
 import '../models/trip.dart';
 import '../repositories/trip_repository.dart';
+import '../widgets/widgets.dart';
 
 class CreateNewTripPage extends StatefulWidget {
   const CreateNewTripPage({super.key});
@@ -304,29 +305,11 @@ class _CreateNewTripPageState extends State<CreateNewTripPage> {
 
             const SizedBox(height: 40),
 
-            SizedBox(
-              width: double.infinity,
+            CustomButton(
+              text: 'DONE',
+              onPressed: _isLoading ? null : _createTrip,
+              isLoading: _isLoading,
               height: 52,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00C49F),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                onPressed: _isLoading ? null : _createTrip,
-                child:
-                    _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text(
-                          "DONE",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-              ),
             ),
           ],
         ),

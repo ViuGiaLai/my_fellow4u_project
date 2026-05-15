@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../widgets/widgets.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,9 +19,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
-
-  // Primary color from the design
-  final Color _appGreen = const Color(0xFF00C49F);
 
   // Supabase Google Login Handler
   Future<void> _loginWithGoogle() async {
@@ -253,18 +251,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w500),
                   ),
                   
-                  TextField(
+                  CustomTextField(
                     controller: _emailController,
+                    hintText: 'yoojin@gmail.com',
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      hintText: 'yoojin@gmail.com',
-                      enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.grey, width: 0.5),
-                      ),
-                      focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Color(0xFF00B167), width: 2),
-                      ),
-                    ),
                   ),
                   
                   const SizedBox(height: 30),
@@ -275,18 +265,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w500),
                   ),
                   
-                  TextField(
+                  CustomPasswordField(
                     controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      hintText: '••••••',
-                      enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.grey, width: 0.5),
-                      ),
-                      focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Color(0xFF00B167), width: 2),
-                      ),
-                    ),
+                    hintText: '••••••',
                   ),
                   
                   const SizedBox(height: 15),
@@ -309,34 +290,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 30),
                   
                   // Sign In Button
-                  SizedBox(
-                    width: double.infinity,
+                  CustomButton(
+                    text: 'SIGN IN',
+                    onPressed: _isLoading ? null : _handleLogin,
+                    isLoading: _isLoading,
                     height: 55,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _handleLogin,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _appGreen,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                          : const Text(
-                              'SIGN IN',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                    ),
                   ),
                   
                   const SizedBox(height: 30),
