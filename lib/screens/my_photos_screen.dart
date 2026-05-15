@@ -79,11 +79,13 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
     }
   }
 
-  Future<void> _deletePhoto(String photoId) async {
+  Future<void> _deletePhoto(String photoUrl) async {
     try {
-      final success = await ApiService.deletePhoto(photoId);
+      final success = await ApiService.deletePhoto(photoUrl);
       if (success) {
-        _loadPhotos(); // Refresh photos
+        // Đợi Supabase cập nhật
+        await Future.delayed(const Duration(milliseconds: 500));
+        await _loadPhotos(); // Refresh photos
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Photo deleted successfully!'),
@@ -194,9 +196,8 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
   }
 
   Widget _buildPhotoItem(dynamic photo) {
-    final String photoUrl = photo['url'] ?? '';
-    final String photoId = photo['id']?.toString() ?? '';
-    final String description = photo['description'] ?? '';
+    final String photoUrl = photo['url'] ?? photo.toString();
+    final String photoId = photo['id']?.toString() ?? photoUrl;
 
     return Container(
       decoration: BoxDecoration(
@@ -240,7 +241,7 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
               top: 8,
               right: 8,
               child: GestureDetector(
-                onTap: () => _showDeleteDialog(photoId),
+                onTap: () => _showDeleteDialog(photoUrl),
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
@@ -261,7 +262,7 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
     );
   }
 
-  void _showDeleteDialog(String photoId) {
+  void _showDeleteDialog(String photoUrl) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -275,7 +276,7 @@ class _MyPhotosScreenState extends State<MyPhotosScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              _deletePhoto(photoId);
+              _deletePhoto(photoUrl);
             },
             child: const Text(
               'Delete',

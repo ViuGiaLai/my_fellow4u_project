@@ -10,6 +10,7 @@ import 'screens/onboarding_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/forgot_password_screen.dart';
+import 'screens/check_email_signup_screen.dart';
 
 // Import các trang cho BottomNavigationBar
 import 'screens/home_screen.dart';
@@ -53,6 +54,10 @@ class MyApp extends StatelessWidget {
         '/': (context) => const OnboardingScreen(),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
+        '/check-email-signup': (context) {
+        final email = ModalRoute.of(context)?.settings.arguments as String? ?? '';
+        return CheckEmailSignupScreen(email: email);
+      },
         '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/main': (context) => const MainAppScaffold(),
       },

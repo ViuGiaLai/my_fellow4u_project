@@ -123,15 +123,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             message: lastMessage,
                             avatarUrl: avatar,
                             time: _formatTime(lastTime),
-                            conversationId: conv['_id'] as String,
-                            participantId: participant['_id'] as String,
+                            conversationId: conv['_id'] as String? ?? '',
+                            participantId: participant['_id'] as String? ?? '',
                             onTap: () async {
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => ChatDetailScreen(
-                                    conversationId: conv['_id'] as String,
-                                    participantId: participant['_id'] as String,
+                                    conversationId: conv['_id'] as String? ?? '',
+                                    participantId: participant['_id'] as String? ?? '',
                                     participantName: name.isEmpty ? 'Unknown' : name,
                                     participantAvatar: avatar,
                                   ),
@@ -540,7 +540,7 @@ class _AddFriendScreenState extends State<AddFriendScreen> {
     setState(() {
       _users = users;
       for (final user in users) {
-        _selected.putIfAbsent(user['_id'] as String, () => false);
+        _selected.putIfAbsent(user['_id'] as String? ?? '', () => false);
       }
       _isLoading = false;
     });
@@ -583,10 +583,10 @@ class _AddFriendScreenState extends State<AddFriendScreen> {
     if (singleParticipant != null && createdConversations.isNotEmpty) {
       final createdConversation = createdConversations.first;
       result.addAll({
-        'conversationId': createdConversation['_id'] as String?,
-        'participantId': singleParticipant['_id'] as String?,
+        'conversationId': createdConversation['_id'] as String? ?? '',
+        'participantId': singleParticipant['_id'] as String? ?? '',
         'participantName': "${singleParticipant['firstName'] ?? ''} ${singleParticipant['lastName'] ?? ''}".trim(),
-        'participantAvatar': singleParticipant['avatar'] as String?,
+        'participantAvatar': singleParticipant['avatar'] as String? ?? '',
       });
     }
 
@@ -657,8 +657,9 @@ class _AddFriendScreenState extends State<AddFriendScreen> {
                           ),
                           secondary: CircleAvatar(
                             backgroundImage: NetworkImage(
-                              user['avatar'] as String? ??
-                                  "https://res.cloudinary.com/dqe5syxc0/image/upload/v1772716233/avatar_cpp4hl.png",
+                              (user['avatar'] as String?)?.isNotEmpty == true
+                                  ? user['avatar'] as String
+                                  : "https://res.cloudinary.com/dqe5syxc0/image/upload/v1772716233/avatar_cpp4hl.png",
                             ),
                           ),
                           onChanged: (v) => setState(() => _selected[uid] = v!),

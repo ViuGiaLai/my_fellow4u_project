@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
-import 'check_email_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'check_email_signup_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -33,10 +35,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       );
 
       if (response.statusCode == 200) {
+        // ✅ Gửi email reset password từ Supabase
+        try {
+          await Supabase.instance.client.auth.resetPasswordForEmail(email);
+          debugPrint('✅ Gửi email reset password Supabase thành công');
+        } catch (e) {
+          debugPrint('⚠️ Supabase reset password error: $e');
+        }
+
         if (mounted) {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const CheckEmailScreen()),
+            MaterialPageRoute(builder: (context) => CheckEmailSignupScreen(email: email)),
           );
         }
       } else {

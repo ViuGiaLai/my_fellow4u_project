@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'check_email_signup_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -75,12 +77,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (response.statusCode == 201 || response.statusCode == 200) {
       if (!mounted) return;
 
+      // ✅ Tạo user trong Supabase Auth để có thể upload ảnh
+      try {
+        await Supabase.instance.client.auth.signUp(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+        debugPrint('✅ Tạo user trong Supabase thành công');
+      } catch (e) {
+        debugPrint('⚠️ Supabase sign up error (user có thể đã tồn tại): $e');
+        // Tiếp tục nếu Supabase lỗi (user đã có hoặc lỗi khác)
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đăng ký thành công!')),
+        const SnackBar(content: Text('Đăng ký thành công! Vui lòng xác nhận email.')),
       );
 
-      // Có thể điều hướng sang Login
-      Navigator.pushReplacementNamed(context, '/login');
+      // Chuyển đến trang xác nhận email
+      Navigator.pushReplacementNamed(
+        context,
+        '/check-email-signup',
+        arguments: _emailController.text.trim(),
+      );
 
     } else {
       if (!mounted) return;

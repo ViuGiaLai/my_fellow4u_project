@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/api_service.dart';
 import 'settings_screen.dart';
 import 'my_photos_screen.dart';
@@ -25,6 +26,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _loadUserData();
     _loadTrips();
+    _loadPhotos();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload photos when returning from My Photos screen
+    _loadPhotos();
+  }
+
+  // Load photos from Supabase Storage
+  Future<void> _loadPhotos() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      final response = await Supabase.instance.client.storage
+          .from('user_photos')
+          .list(path: 'photos/${user.id}');
+
+      if (response != null && response.isNotEmpty) {
+        final urls = <String>[];
+        for (final file in response) {
+          final url = Supabase.instance.client.storage
+              .from('user_photos')
+              .getPublicUrl('photos/${user.id}/${file.name}');
+          urls.add(url);
+        }
+        if (mounted) {
+          setState(() => _photos = urls);
+        }
+      }
+    } catch (e) {
+      print('Error loading photos: $e');
+    }
   }
 
   
@@ -40,11 +76,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : userProfile['email']?.split('@').first ?? 'User';
           _userEmail = userProfile['email'] ?? '';
           _avatarUrl = userProfile['avatarUrl'] ?? userProfile['avatar_url'];
-          // Load photos from API if available
-          _photos = (userProfile['photos'] as List<dynamic>?)
-                  ?.map((e) => e.toString())
-                  .toList() ??
-              [];
         });
       }
     } catch (e) {

@@ -119,6 +119,17 @@ class _LoginScreenState extends State<LoginScreen> {
         // Không return ở đây - vẫn tiếp tục navigate
       }
     }
+
+    // ✅ Đăng nhập Supabase sau khi login backend thành công
+    try {
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      debugPrint('✅ Đăng nhập Supabase thành công');
+    } catch (e) {
+      debugPrint('⚠️ Supabase login error (có thể user chưa có trong Supabase): $e');
+    }
   }
 
            if (mounted) {
